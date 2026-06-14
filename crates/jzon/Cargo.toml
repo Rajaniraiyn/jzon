@@ -12,7 +12,7 @@ stats = []
 fast-float = ["dep:ryu", "dep:fast-float2"]
 
 [dependencies]
-jzon_derive = { path = "../jzon_derive" }
+jzon_derive = { path = "../jzon_derive", version = "0.1" }
 ryu = { version = "1", optional = true }
 fast-float2 = { version = "0.2", optional = true }
 

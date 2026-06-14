@@ -11,7 +11,7 @@ fast-float = ["jzon/fast-float"]
 unstable   = ["jzon/unstable"]
 
 [dependencies]
-jzon  = { path = "../jzon" }
+jzon  = { path = "../jzon", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

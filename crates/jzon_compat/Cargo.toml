@@ -11,6 +11,6 @@ fast-float = ["jzon_serde/fast-float"]
 unstable   = ["jzon_serde/unstable"]
 
 [dependencies]
-jzon_serde = { path = "../jzon_serde" }
+jzon_serde = { path = "../jzon_serde", version = "0.1" }
 serde      = { version = "1", features = ["derive"] }
 serde_json = { version = "1", package = "serde_json" }
