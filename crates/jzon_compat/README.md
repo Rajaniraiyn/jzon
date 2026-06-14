@@ -30,4 +30,4 @@ That's it. Cargo replaces every transitive `serde_json` dependency with this cra
 
 ## License
 
-MIT OR Apache-2.0
+MIT

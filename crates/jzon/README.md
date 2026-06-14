@@ -2,7 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/jzon-rs.svg)](https://crates.io/crates/jzon-rs)
 [![docs.rs](https://docs.rs/jzon-rs/badge.svg)](https://docs.rs/jzon-rs)
-[![CI](https://github.com/rajaniraiyn/jzon/actions/workflows/ci.yml/badge.svg)](https://github.com/rajaniraiyn/jzon/actions)
+[![CI](https://github.com/Rajaniraiyn/jzon-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/Rajaniraiyn/jzon-rs/actions)
 
 Zero-copy JSON for Rust with compile-time generated parsers.
 
@@ -25,8 +25,8 @@ struct Event<'a> {
 
 fn main() {
     let src = r#"{"id":1,"name":"launch","tags":["rust","json"]}"#;
-    let ev: Event = jzon::from_str(src).unwrap();
-    println!("{}", jzon::to_string(&ev).unwrap());
+    let ev: Event = Event::from_json_str(src).unwrap();
+    println!("{}", ev.to_json_string());
 }
 ```
 
@@ -56,7 +56,7 @@ Benchmarked on Apple M2, `rustc 1.78`, release mode, `criterion` 0.5.
 
 ## License
 
-MIT OR Apache-2.0
+MIT
 
 ---
 

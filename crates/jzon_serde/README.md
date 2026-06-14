@@ -51,4 +51,4 @@ Feature flags mirror those of [jzon-rs](https://crates.io/crates/jzon-rs).
 
 ## License
 
-MIT OR Apache-2.0
+MIT

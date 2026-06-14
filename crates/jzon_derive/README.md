@@ -23,8 +23,8 @@ struct Point {
 ## See Also
 
 - [jzon-rs](https://crates.io/crates/jzon-rs) — main crate and full documentation
-- [GitHub](https://github.com/rajaniraiyn/jzon)
+- [GitHub](https://github.com/Rajaniraiyn/jzon-rs)
 
 ## License
 
-MIT OR Apache-2.0
+MIT
