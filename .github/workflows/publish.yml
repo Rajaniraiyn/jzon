@@ -19,7 +19,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for indexing
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish jzon-rs
         run: cargo publish -p jzon-rs --no-verify
@@ -27,7 +27,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for indexing
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish jzon-rs-serde
         run: cargo publish -p jzon-rs-serde --no-verify
@@ -35,7 +35,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for indexing
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish jzon-rs-compat
         run: cargo publish -p jzon-rs-compat --no-verify
