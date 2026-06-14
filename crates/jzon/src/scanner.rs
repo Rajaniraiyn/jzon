@@ -1,0 +1,455 @@
+use crate::{simd, Error};
+
+#[cold]
+#[inline]
+fn err_eof() -> Error { Error::UnexpectedEof }
+
+#[cold]
+#[inline]
+fn err_token() -> Error { Error::UnexpectedToken }
+
+/// A parsed JSON string: either a zero-copy borrow or a heap-allocated value.
+pub enum JsonStr<'de> {
+    Borrowed(&'de str),
+    Owned(String),
+}
+
+impl<'de> JsonStr<'de> {
+    #[inline]
+    pub fn as_borrowed(&self) -> Option<&'de str> {
+        match self {
+            JsonStr::Borrowed(s) => Some(s),
+            JsonStr::Owned(_) => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        match self {
+            JsonStr::Borrowed(s) => s,
+            JsonStr::Owned(s) => s.as_str(),
+        }
+    }
+
+    #[inline]
+    pub fn into_owned(self) -> String {
+        match self {
+            JsonStr::Borrowed(s) => s.to_owned(),
+            JsonStr::Owned(s) => s,
+        }
+    }
+}
+
+pub struct Scanner<'de> {
+    input: &'de [u8],
+    pos: usize,
+    #[cfg(feature = "stats")]
+    pub stats: crate::stats::ScannerStats,
+}
+
+impl<'de> Scanner<'de> {
+    #[inline]
+    pub fn new(input: &'de [u8]) -> Self {
+        Scanner {
+            input,
+            pos: 0,
+            #[cfg(feature = "stats")]
+            stats: crate::stats::ScannerStats::default(),
+        }
+    }
+
+    #[inline]
+    pub fn new_str(s: &'de str) -> Self {
+        Self::new(s.as_bytes())
+    }
+
+    #[inline]
+    pub fn peek_byte(&self) -> Result<u8, Error> {
+        self.input.get(self.pos).copied().ok_or_else(err_eof)
+    }
+
+    #[inline]
+    pub fn advance(&mut self) {
+        self.pos += 1;
+    }
+
+    /// Byte offset into the input slice — used by internally-tagged enum parsers to checkpoint and re-scan.
+    #[inline]
+    pub fn pos(&self) -> usize { self.pos }
+
+    #[inline]
+    pub fn set_pos(&mut self, saved_pos: usize) { self.pos = saved_pos; }
+
+    #[inline]
+    pub fn advance_by(&mut self, n: usize) {
+        self.pos += n;
+    }
+
+    /// Remaining unprocessed input — used by single-pass float parsers (`fast_float2::parse_partial`).
+    #[inline]
+    pub fn remaining_input(&self) -> &'de [u8] {
+        &self.input[self.pos..]
+    }
+
+    #[inline]
+    pub fn expect_byte(&mut self, expected: u8) -> Result<(), Error> {
+        match self.input.get(self.pos) {
+            Some(&b) if b == expected => { self.pos += 1; Ok(()) }
+            _ => Err(err_token()),
+        }
+    }
+
+    pub fn expect_bytes(&mut self, expected: &[u8]) -> Result<(), Error> {
+        let end = self.pos + expected.len();
+        if self.input.get(self.pos..end) == Some(expected) {
+            self.pos = end;
+            Ok(())
+        } else {
+            Err(err_token())
+        }
+    }
+
+    #[inline(always)]
+    pub fn skip_whitespace(&mut self) {
+        // Fast path: compact JSON has no leading whitespace — skip the loop entirely.
+        // All structural bytes are > b' ' (32), so this correctly identifies non-whitespace.
+        if let Some(&b) = self.input.get(self.pos) {
+            if b > b' ' { return; }
+        } else {
+            return;
+        }
+        self.skip_whitespace_swar();
+    }
+
+    /// SWAR whitespace skipper — called only when the first byte IS whitespace.
+    ///
+    /// All JSON whitespace bytes (0x09, 0x0A, 0x0D, 0x20) are ≤ 0x20.
+    /// All structural bytes are > 0x20.  Trick: subtract 0x21 from a byte —
+    /// values ≤ 0x20 wrap and get their high bit set; values ≥ 0x21 do not.
+    /// Applied to all 8 bytes at once with 64-bit arithmetic.
+    ///
+    /// Not `#[cold]` — pretty-printed JSON calls this on every field separator.
+    #[inline]
+    fn skip_whitespace_swar(&mut self) {
+        while self.pos + 8 <= self.input.len() {
+            let chunk = u64::from_le_bytes(
+                self.input[self.pos..self.pos + 8].try_into().unwrap(),
+            );
+            let sub = chunk.wrapping_sub(0x2121_2121_2121_2121_u64);
+            if (sub & 0x8080_8080_8080_8080_u64) == 0x8080_8080_8080_8080_u64 {
+                self.pos += 8;
+            } else {
+                break;
+            }
+        }
+        while let Some(&b) = self.input.get(self.pos) {
+            if b > b' ' { break; }
+            self.pos += 1;
+        }
+    }
+
+    #[inline(always)]
+    pub fn peek_byte_after_ws(&mut self) -> Result<u8, Error> {
+        self.skip_whitespace();
+        self.peek_byte()
+    }
+
+    /// Read a JSON object key as a zero-copy `&'de [u8]`.
+    /// Returns `Error::EscapedKey` if the key contains backslashes.
+    pub fn read_key(&mut self) -> Result<&'de [u8], Error> {
+        self.skip_whitespace();
+        self.expect_byte(b'"')?;
+        let start = self.pos;
+        let stop = simd::find(self.input, self.pos);
+        match self.input.get(stop) {
+            Some(&b'"') => {
+                let k = &self.input[start..stop];
+                self.pos = stop + 1;
+                Ok(k)
+            }
+            Some(&b'\\') => Err(Error::EscapedKey),
+            _ => Err(err_eof()),
+        }
+    }
+
+    /// Read a JSON object key and the mandatory `:` separator in one call.
+    #[inline]
+    pub fn read_key_colon(&mut self) -> Result<&'de [u8], Error> {
+        let key = self.read_key()?;
+        // Fast path: ':' almost always immediately follows the closing '"' in compact JSON.
+        if self.input.get(self.pos) == Some(&b':') {
+            self.pos += 1;
+        } else {
+            self.skip_whitespace();
+            self.expect_byte(b':')?;
+        }
+        Ok(key)
+    }
+
+    /// Read a JSON string value.
+    ///
+    /// Returns `Borrowed(&'de str)` when no escape sequences are present
+    /// (zero allocation), or `Owned(String)` after unescaping.
+    pub fn read_str(&mut self) -> Result<JsonStr<'de>, Error> {
+        self.skip_whitespace();
+        self.expect_byte(b'"')?;
+        let start = self.pos;
+        let stop = simd::find(self.input, start);
+
+        match self.input.get(stop) {
+            Some(&b'"') => {
+                let s = core::str::from_utf8(&self.input[start..stop])
+                    .map_err(|_| Error::InvalidUtf8)?;
+                self.pos = stop + 1;
+
+                #[cfg(feature = "stats")]
+                { self.stats.zero_copy_borrows += 1; }
+
+                Ok(JsonStr::Borrowed(s))
+            }
+            Some(&b'\\') => {
+                self.pos = stop;
+                let owned = self.unescape_from(start)?;
+
+                #[cfg(feature = "stats")]
+                { self.stats.heap_allocations += 1; }
+
+                Ok(JsonStr::Owned(owned))
+            }
+            _ => Err(err_eof()),
+        }
+    }
+
+    /// Scan a JSON number and return the raw byte slice (zero-copy).
+    pub fn read_number_bytes(&mut self) -> Result<&'de [u8], Error> {
+        self.skip_whitespace();
+        let start = self.pos;
+        if self.input.get(self.pos) == Some(&b'-') { self.pos += 1; }
+
+        // SWAR digit scan: for byte b, b is b'0'..=b'9' iff (b - 0x30) is 0..=9.
+        // Two conditions: (1) sub has no high bits (rules out bytes ≥ 0xB0),
+        // (2) sub + 0x76 has no high bits (rules out sub bytes 10..=0x7F).
+        #[inline(always)]
+        fn swar_all_digits(chunk: u64) -> bool {
+            let sub = chunk.wrapping_sub(0x3030_3030_3030_3030_u64);
+            if (sub & 0x8080_8080_8080_8080_u64) != 0 { return false; }
+            let check = sub.wrapping_add(0x7676_7676_7676_7676_u64);
+            (check & 0x8080_8080_8080_8080_u64) == 0
+        }
+        while self.pos + 8 <= self.input.len() {
+            let chunk = u64::from_le_bytes(
+                self.input[self.pos..self.pos + 8].try_into().unwrap(),
+            );
+            if swar_all_digits(chunk) { self.pos += 8; } else { break; }
+        }
+        while let Some(&b) = self.input.get(self.pos) { if b.is_ascii_digit() { self.pos += 1; } else { break; } }
+        if self.input.get(self.pos) == Some(&b'.') {
+            self.pos += 1;
+            while self.pos + 8 <= self.input.len() {
+                let chunk = u64::from_le_bytes(
+                    self.input[self.pos..self.pos + 8].try_into().unwrap(),
+                );
+                if swar_all_digits(chunk) { self.pos += 8; } else { break; }
+            }
+            while let Some(&b) = self.input.get(self.pos) { if b.is_ascii_digit() { self.pos += 1; } else { break; } }
+        }
+        if matches!(self.input.get(self.pos), Some(b'e') | Some(b'E')) {
+            self.pos += 1;
+            if matches!(self.input.get(self.pos), Some(b'+') | Some(b'-')) { self.pos += 1; }
+            while let Some(&b) = self.input.get(self.pos) { if b.is_ascii_digit() { self.pos += 1; } else { break; } }
+        }
+        let end = self.pos;
+        if end == start || (end == start + 1 && self.input[start] == b'-') {
+            return Err(Error::InvalidNumber);
+        }
+
+        #[cfg(feature = "stats")]
+        { self.stats.bytes_scanned += (end - start) as u64; }
+
+        Ok(&self.input[start..end])
+    }
+
+    /// Returns true if the next (non-whitespace) bytes are `null` — does NOT consume.
+    #[inline]
+    pub fn peek_null(&mut self) -> bool {
+        self.skip_whitespace();
+        self.input.get(self.pos..self.pos + 4) == Some(b"null")
+    }
+
+    pub fn read_null(&mut self) -> Result<(), Error> {
+        self.skip_whitespace();
+        self.expect_bytes(b"null")
+    }
+
+    pub fn read_bool(&mut self) -> Result<bool, Error> {
+        self.skip_whitespace();
+        match self.input.get(self.pos) {
+            Some(&b't') => {
+                self.pos += 4;
+                if self.input.get(self.pos - 3..self.pos) == Some(b"rue") {
+                    Ok(true)
+                } else {
+                    self.pos -= 4;
+                    Err(err_token())
+                }
+            }
+            Some(&b'f') => {
+                self.pos += 5;
+                if self.input.get(self.pos - 4..self.pos) == Some(b"alse") {
+                    Ok(false)
+                } else {
+                    self.pos -= 5;
+                    Err(err_token())
+                }
+            }
+            _ => Err(err_token()),
+        }
+    }
+
+    /// Skip over any JSON value — used for unknown fields.
+    pub fn skip_value(&mut self) -> Result<(), Error> {
+        self.skip_whitespace();
+        match self.peek_byte()? {
+            b'"'              => self.skip_string(),
+            b'{'              => self.skip_object(),
+            b'['              => self.skip_array(),
+            b't'              => self.expect_bytes(b"true"),
+            b'f'              => self.expect_bytes(b"false"),
+            b'n'              => self.expect_bytes(b"null"),
+            b'-' | b'0'..=b'9' => { self.read_number_bytes()?; Ok(()) }
+            _                 => Err(err_token()),
+        }
+    }
+
+    fn skip_string(&mut self) -> Result<(), Error> {
+        self.expect_byte(b'"')?;
+        loop {
+            match self.input.get(self.pos) {
+                Some(&b'"')  => { self.pos += 1; return Ok(()); }
+                Some(&b'\\') => { self.pos += 2; }
+                Some(_)      => { self.pos += 1; }
+                None         => return Err(err_eof()),
+            }
+        }
+    }
+
+    /// Skip remaining fields of an already-opened object (cursor is just past `{`).
+    /// Used by internally-tagged enum deserialization when the variant is unknown.
+    pub fn skip_object_tail(&mut self) -> Result<(), Error> {
+        loop {
+            self.skip_whitespace();
+            match self.peek_byte()? {
+                b'}' => { self.pos += 1; return Ok(()); }
+                b'"' => {
+                    self.skip_string()?;
+                    self.skip_whitespace();
+                    self.expect_byte(b':')?;
+                    self.skip_value()?;
+                    self.skip_whitespace();
+                    match self.peek_byte()? {
+                        b',' => { self.pos += 1; }
+                        b'}' => { self.pos += 1; return Ok(()); }
+                        _ => return Err(err_token()),
+                    }
+                }
+                _ => return Err(err_token()),
+            }
+        }
+    }
+
+    fn skip_object(&mut self) -> Result<(), Error> {
+        self.expect_byte(b'{')?;
+        self.skip_whitespace();
+        if self.input.get(self.pos) == Some(&b'}') { self.pos += 1; return Ok(()); }
+        loop {
+            self.skip_string()?;
+            self.skip_whitespace();
+            self.expect_byte(b':')?;
+            self.skip_value()?;
+            self.skip_whitespace();
+            match self.peek_byte()? {
+                b',' => { self.pos += 1; self.skip_whitespace(); }
+                b'}' => { self.pos += 1; break; }
+                _    => return Err(err_token()),
+            }
+        }
+        Ok(())
+    }
+
+    fn skip_array(&mut self) -> Result<(), Error> {
+        self.expect_byte(b'[')?;
+        self.skip_whitespace();
+        if self.input.get(self.pos) == Some(&b']') { self.pos += 1; return Ok(()); }
+        loop {
+            self.skip_value()?;
+            self.skip_whitespace();
+            match self.peek_byte()? {
+                b',' => { self.pos += 1; self.skip_whitespace(); }
+                b']' => { self.pos += 1; break; }
+                _    => return Err(err_token()),
+            }
+        }
+        Ok(())
+    }
+
+    /// Unescape a JSON string whose content starts at `content_start` and whose
+    /// first backslash is at `self.pos`.  Returns the fully decoded `String`.
+    fn unescape_from(&mut self, content_start: usize) -> Result<String, Error> {
+        let mut buf: Vec<u8> = self.input[content_start..self.pos].to_vec();
+
+        loop {
+            match self.input.get(self.pos) {
+                Some(&b'"') => { self.pos += 1; break; }
+                Some(&b'\\') => {
+                    self.pos += 1;
+                    let esc = self.input.get(self.pos).copied().ok_or_else(err_eof)?;
+                    self.pos += 1;
+                    match esc {
+                        b'"'  => buf.push(b'"'),
+                        b'\\' => buf.push(b'\\'),
+                        b'/'  => buf.push(b'/'),
+                        b'n'  => buf.push(b'\n'),
+                        b't'  => buf.push(b'\t'),
+                        b'r'  => buf.push(b'\r'),
+                        b'b'  => buf.push(0x08),
+                        b'f'  => buf.push(0x0C),
+                        b'u'  => {
+                            let hex = self.input.get(self.pos..self.pos + 4).ok_or(Error::InvalidEscape)?;
+                            let s = core::str::from_utf8(hex).map_err(|_| Error::InvalidEscape)?;
+                            let code = u32::from_str_radix(s, 16).map_err(|_| Error::InvalidEscape)?;
+                            let c = if (0xD800..=0xDBFF).contains(&code) {
+                                self.pos += 4;
+                                if self.input.get(self.pos..self.pos + 2) != Some(b"\\u") {
+                                    return Err(Error::InvalidEscape);
+                                }
+                                self.pos += 2;
+                                let lo_hex = self.input.get(self.pos..self.pos + 4).ok_or(Error::InvalidEscape)?;
+                                let lo_s = core::str::from_utf8(lo_hex).map_err(|_| Error::InvalidEscape)?;
+                                let lo = u32::from_str_radix(lo_s, 16).map_err(|_| Error::InvalidEscape)?;
+                                self.pos += 4;
+                                let combined = 0x10000 + ((code - 0xD800) << 10) + (lo - 0xDC00);
+                                char::from_u32(combined).ok_or(Error::InvalidEscape)?
+                            } else {
+                                self.pos += 4;
+                                char::from_u32(code).ok_or(Error::InvalidEscape)?
+                            };
+                            let mut tmp = [0u8; 4];
+                            buf.extend_from_slice(c.encode_utf8(&mut tmp).as_bytes());
+                            continue;
+                        }
+                        _ => return Err(Error::InvalidEscape),
+                    }
+                }
+                Some(_) => {
+                    let seg_start = self.pos;
+                    let stop = simd::find(self.input, self.pos);
+                    buf.extend_from_slice(&self.input[seg_start..stop]);
+                    self.pos = stop;
+                }
+                None => return Err(err_eof()),
+            }
+        }
+
+        String::from_utf8(buf).map_err(|_| Error::InvalidUtf8)
+    }
+}

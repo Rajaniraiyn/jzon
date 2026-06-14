@@ -1,0 +1,29 @@
+[package]
+name = "jzon"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+simd = []
+unstable = []
+stats = []
+fast-float = ["dep:ryu", "dep:fast-float2"]
+
+[dependencies]
+jzon_derive = { path = "../jzon_derive" }
+ryu = { version = "1", optional = true }
+fast-float2 = { version = "0.2", optional = true }
+
+[dev-dependencies]
+sonic-rs    = "0.3"
+simd-json   = { version = "0.13", features = ["serde_impl"] }
+ryu         = "1"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+jzon_serde   = { path = "../jzon_serde" }
+criterion    = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name    = "bench_cmp"
+harness = false
