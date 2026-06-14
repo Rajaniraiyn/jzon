@@ -5,9 +5,12 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Zero-copy JSON serialization with compile-time generated typed parsers"
-name = "jzon"
+name = "jzon-rs"
 version.workspace = true
 edition.workspace = true
+
+[lib]
+name = "jzon"
 
 [features]
 default = []
@@ -17,7 +20,7 @@ stats = []
 fast-float = ["dep:ryu", "dep:fast-float2"]
 
 [dependencies]
-jzon_derive = { path = "../jzon_derive", version = "0.1" }
+jzon_derive = { package = "jzon-rs-derive", path = "../jzon_derive", version = "0.1" }
 ryu = { version = "1", optional = true }
 fast-float2 = { version = "0.2", optional = true }
 
@@ -27,7 +30,7 @@ simd-json   = { version = "0.13", features = ["serde_impl"] }
 ryu         = "1"
 serde        = { version = "1", features = ["derive"] }
 serde_json   = "1"
-jzon_serde   = { path = "../jzon_serde" }
+jzon_serde   = { package = "jzon-rs-serde", path = "../jzon_serde" }
 criterion    = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]

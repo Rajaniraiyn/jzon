@@ -5,7 +5,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Proc-macro crate for #[derive(ToJson, FromJson)] — part of jzon"
-name = "jzon_derive"
+name = "jzon-rs-derive"
 version.workspace = true
 edition.workspace = true
 

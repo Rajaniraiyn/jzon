@@ -1,8 +1,8 @@
 # jzon
 
-[![Crates.io](https://img.shields.io/crates/v/jzon.svg)](https://crates.io/crates/jzon)
-[![Docs.rs](https://docs.rs/jzon/badge.svg)](https://docs.rs/jzon)
-[![CI](https://github.com/rajaniraiyn/jzon/actions/workflows/ci.yml/badge.svg)](https://github.com/rajaniraiyn/jzon/actions)
+[![Crates.io](https://img.shields.io/crates/v/jzon-rs.svg)](https://crates.io/crates/jzon-rs)
+[![Docs.rs](https://docs.rs/jzon-rs/badge.svg)](https://docs.rs/jzon)
+[![CI](https://github.com/Rajaniraiyn/jzon-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/Rajaniraiyn/jzon-rs/actions)
 
 Zero-copy JSON for Rust. A proc-macro generates a typed, monomorphised
 parser and serializer per struct at compile time — no runtime dispatch,

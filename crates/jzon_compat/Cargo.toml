@@ -5,7 +5,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Drop-in serde_json replacement powered by jzon (Cargo patch)"
-name = "jzon_compat"
+name = "jzon-rs-compat"
 version.workspace = true
 edition.workspace = true
 
@@ -16,6 +16,6 @@ fast-float = ["jzon_serde/fast-float"]
 unstable   = ["jzon_serde/unstable"]
 
 [dependencies]
-jzon_serde = { path = "../jzon_serde", version = "0.1" }
+jzon_serde = { package = "jzon-rs-serde", path = "../jzon_serde", version = "0.1" }
 serde      = { version = "1", features = ["derive"] }
 serde_json = { version = "1", package = "serde_json" }

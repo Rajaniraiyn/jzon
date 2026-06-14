@@ -5,7 +5,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Serde-compatible JSON engine backed by jzon's SIMD scanner"
-name = "jzon_serde"
+name = "jzon-rs-serde"
 version.workspace = true
 edition.workspace = true
 
@@ -16,8 +16,11 @@ fast-float = ["jzon/fast-float"]
 unstable   = ["jzon/unstable"]
 
 [dependencies]
-jzon  = { path = "../jzon", version = "0.1" }
+jzon  = { package = "jzon-rs", path = "../jzon", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 serde_json = "1"
+
+[lib]
+name = "jzon_serde"
