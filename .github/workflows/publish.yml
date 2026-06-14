@@ -10,54 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish jzon-rs-derive
-        run: |
-          if cargo search jzon-rs-derive 2>/dev/null | grep -q "0.1.0"; then
-            echo "jzon-rs-derive 0.1.0 already published, skipping"
-          else
-            cargo publish -p jzon-rs-derive --no-verify
-          fi
+      - run: cargo publish -p jzon-rs-derive --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Wait for indexing
-        run: sleep 60
-
-      - name: Publish jzon-rs
-        run: |
-          if cargo search jzon-rs 2>/dev/null | grep -q "0.1.0"; then
-            echo "jzon-rs 0.1.0 already published, skipping"
-          else
-            cargo publish -p jzon-rs --no-verify
-          fi
+      - run: cargo publish -p jzon-rs --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Wait for indexing
-        run: sleep 60
-
-      - name: Publish jzon-rs-serde
-        run: |
-          if cargo search jzon-rs-serde 2>/dev/null | grep -q "0.1.0"; then
-            echo "jzon-rs-serde 0.1.0 already published, skipping"
-          else
-            cargo publish -p jzon-rs-serde --no-verify
-          fi
+      - run: cargo publish -p jzon-rs-serde --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Wait for indexing
-        run: sleep 60
-
-      - name: Publish jzon-rs-compat
-        run: |
-          if cargo search jzon-rs-compat 2>/dev/null | grep -q "0.1.0"; then
-            echo "jzon-rs-compat 0.1.0 already published, skipping"
-          else
-            cargo publish -p jzon-rs-compat --no-verify
-          fi
+      - run: cargo publish -p jzon-rs-compat --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
