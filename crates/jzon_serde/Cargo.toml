@@ -1,0 +1,17 @@
+[package]
+name = "jzon_serde"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+simd       = ["jzon/simd"]
+fast-float = ["jzon/fast-float"]
+unstable   = ["jzon/unstable"]
+
+[dependencies]
+jzon  = { path = "../jzon" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
