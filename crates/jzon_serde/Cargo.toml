@@ -1,4 +1,9 @@
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Serde-compatible JSON engine backed by jzon's SIMD scanner"
 name = "jzon_serde"
 version.workspace = true

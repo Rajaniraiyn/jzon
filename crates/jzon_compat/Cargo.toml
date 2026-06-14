@@ -1,4 +1,9 @@
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Drop-in serde_json replacement powered by jzon (Cargo patch)"
 name = "jzon_compat"
 version.workspace = true

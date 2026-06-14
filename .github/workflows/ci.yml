@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
       - run: cargo test --features "simd,fast-float"
@@ -18,5 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       - uses: dtolnay/rust-toolchain@nightly
       - run: cargo test --features "simd,unstable,fast-float"

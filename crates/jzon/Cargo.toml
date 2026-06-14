@@ -1,4 +1,9 @@
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Zero-copy JSON serialization with compile-time generated typed parsers"
 name = "jzon"
 version.workspace = true
