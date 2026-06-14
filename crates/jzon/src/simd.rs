@@ -66,7 +66,7 @@ pub fn find_quote_or_backslash_simd16(input: &[u8], start: usize) -> usize {
 
 #[cfg(all(feature = "simd", feature = "unstable"))]
 pub fn find_quote_or_backslash_portable32(input: &[u8], start: usize) -> usize {
-    use std::simd::{u8x32, SimdPartialEq, ToBitMask};
+    use std::simd::{cmp::SimdPartialEq, num::SimdUint, u8x32};
 
     let quote  = u8x32::splat(b'"');
     let slash  = u8x32::splat(b'\\');
@@ -74,7 +74,8 @@ pub fn find_quote_or_backslash_portable32(input: &[u8], start: usize) -> usize {
 
     while i + 32 <= input.len() {
         let chunk = u8x32::from_slice(&input[i..i + 32]);
-        let mask  = (chunk.simd_eq(quote) | chunk.simd_eq(slash)).to_bitmask();
+        let m = chunk.simd_eq(quote) | chunk.simd_eq(slash);
+        let mask = m.to_bitmask();
         if mask != 0 {
             return i + mask.trailing_zeros() as usize;
         }
@@ -87,7 +88,7 @@ pub fn find_quote_or_backslash_portable32(input: &[u8], start: usize) -> usize {
 /// 64-byte lanes — compiler emits AVX-512/SVE/etc. automatically; Rust code is fully safe.
 #[cfg(all(feature = "simd", feature = "unstable"))]
 pub fn find_quote_or_backslash_portable64(input: &[u8], start: usize) -> usize {
-    use std::simd::{u8x64, SimdPartialEq, ToBitMask};
+    use std::simd::{cmp::SimdPartialEq, num::SimdUint, u8x64};
 
     let quote  = u8x64::splat(b'"');
     let slash  = u8x64::splat(b'\\');
@@ -95,7 +96,8 @@ pub fn find_quote_or_backslash_portable64(input: &[u8], start: usize) -> usize {
 
     while i + 64 <= input.len() {
         let chunk = u8x64::from_slice(&input[i..i + 64]);
-        let mask  = (chunk.simd_eq(quote) | chunk.simd_eq(slash)).to_bitmask();
+        let m = chunk.simd_eq(quote) | chunk.simd_eq(slash);
+        let mask = m.to_bitmask();
         if mask != 0 {
             return i + mask.trailing_zeros() as usize;
         }
@@ -168,7 +170,7 @@ fn find_escape_scalar(input: &[u8], start: usize) -> usize {
 /// Scan `input[start..]` for the first byte needing JSON string escaping using 32-byte portable SIMD.
 #[cfg(all(feature = "simd", feature = "unstable"))]
 fn find_escape_simd32(input: &[u8], start: usize) -> usize {
-    use std::simd::{cmp::SimdOrd, cmp::SimdPartialEq, u8x32, ToBitMask};
+    use std::simd::{cmp::SimdPartialEq, cmp::SimdPartialOrd, u8x32};
 
     let quote     = u8x32::splat(b'"');
     let slash     = u8x32::splat(b'\\');
