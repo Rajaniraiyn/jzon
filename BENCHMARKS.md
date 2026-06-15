@@ -168,13 +168,7 @@ gh workflow run bench.yml --ref main \
   -f measurement_time=6
 ```
 
-The matrix step picks 5 runners (defaults; or comma-list a subset via
-the `runners` input). Each runner uploads its criterion HTML + log as
-an artifact named `criterion-<platform>`.
-
-Sources for the runs above:
-
-- Run 1 stable + ryu:   https://github.com/Rajaniraiyn/jzon-rs/actions/runs/27563527211
-- Run 2 stable + zmij:  https://github.com/Rajaniraiyn/jzon-rs/actions/runs/27563528720
-- Run 3 nightly + ryu:  https://github.com/Rajaniraiyn/jzon-rs/actions/runs/27563530377
-- Run 4 nightly + zmij: https://github.com/Rajaniraiyn/jzon-rs/actions/runs/27563532121
+The matrix step picks 5 runners by default (or filter via the
+`runners` input). Each runner uploads its criterion HTML + log as a
+`criterion-<platform>` artifact. Run any combo against any ref —
+re-running the workflow regenerates the tables in this file.

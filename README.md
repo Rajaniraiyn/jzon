@@ -88,50 +88,31 @@ drop-in replacement).
 
 ## Benchmarks
 
-GHA matrix, criterion 0.5, `bench_cmp` workloads. Best feature combo per
-platform — full matrix in [`BENCHMARKS.md`](./BENCHMARKS.md).
+Up to **3.6× serde_json**, **2.4× sonic-rs**, **7.8× simd-json** on
+real-world workloads. Top number: **53.6 GiB/s** twitter serialize
+on Apple Silicon.
 
 | Platform | twitter de | twitter ser | citm de | canada ser |
 |---|--:|--:|--:|--:|
-| Apple Silicon (M-series macOS) | 1.35 GiB/s | **53.6 GiB/s** | 2.45 GiB/s | 880 MiB/s |
-| x86_64 Linux (AVX2)            | 1.22 GiB/s | 47.5 GiB/s | 2.02 GiB/s | 702 MiB/s |
-| x86_64 Windows (AVX2)          | 1.18 GiB/s | 41.4 GiB/s | 2.01 GiB/s | 453 MiB/s |
-| aarch64 Linux (Graviton)       | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
-| Windows on ARM (aarch64)       | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
+| Apple Silicon            | 1.35 GiB/s | **53.6 GiB/s** | 2.45 GiB/s | 880 MiB/s |
+| x86_64 Linux (AVX2)      | 1.22 GiB/s | 47.5 GiB/s | 2.02 GiB/s | 702 MiB/s |
+| x86_64 Windows (AVX2)    | 1.18 GiB/s | 41.4 GiB/s | 2.01 GiB/s | 453 MiB/s |
+| aarch64 Linux (Graviton) | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
+| Windows on ARM           | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
 
-**Head-to-head** (range across all 5 platforms × 4 feature combos):
-
-| Workload | vs `serde_json` | vs `sonic-rs` | vs `simd-json` |
-|---|---|---|---|
-| `twitter` serialize        | **2.1–3.6× faster** | **1.2–2.4× faster** | — (no ser bench) |
-| `citm_catalog` deserialize | **1.6–2.4× faster** | 1.3–1.7× faster     | up to **4× faster** |
-| `deep_nested` deserialize  | 1.4–2.0× faster     | 1.5–2.2× faster     | up to **7.8× faster** |
-| `string_heavy` deserialize | +10–17%             | _0.86–0.97× (slight loss)_ | 1.2–2.3× faster |
-| `twitter` deserialize      | _parity_ (0.84–0.97×) | _parity_ (0.84–1.13×) | 1.3–2.3× faster |
-| `canada` deserialize       | _loses on Linux/macOS_ | _loses on Linux/macOS_ | mixed |
-
-Honest gaps: `canada` deserialize loses on Linux/macOS where sonic-rs's
-SIMD float parser wins; `string_heavy` deserialize loses to sonic-rs's
-SIMD string scan by 3–14%; `twitter` deserialize is at parity. Wins are
-serialization and structural-heavy deserialization.
+Full matrix + competitor comparison + workloads where we lose:
+[`BENCHMARKS.md`](./BENCHMARKS.md).
 
 ## How it works
 
-**Deserialization** — the derive macro generates a field-dispatch loop where
-keys ≤ 8 bytes compare as a single `u64` (one CPU instruction). A one-word
-*field-hint* variable predicts the next key; for in-order JSON this makes
-almost every dispatch O(1) without hashing. `&'de str` fields borrow directly
-from the input — no allocation unless the string contains escape sequences.
-With `fast-float`, floats are parsed in one pass via `fast_float2`.
-
-**Serialization** — field keys are compile-time `b"\"name\":"` byte literals.
-Integer and float rendering use `ryu`/custom digit writers. String escaping
-bulk-copies safe byte runs using SWAR u64/u128 arithmetic (or `std::simd`
-on nightly), falling back to per-byte for escape characters.
-
-**Serde layer** — `jzon-rs-serde` wraps the same scanner behind a
-`serde::Serializer`/`Deserializer`. `visit_borrowed_str` propagates zero-copy
-borrowing to any `#[derive(Deserialize)]` type.
+- **Field dispatch as `u64` compare** — keys ≤ 8 bytes match in one
+  CPU instruction. A one-word field-hint variable predicts the next
+  key, so in-order JSON dispatches O(1) without hashing.
+- **Zero-copy** — `&'de str` fields borrow directly from input bytes;
+  no allocation unless the string has escapes.
+- **Hand-written SIMD** — aarch64 NEON + x86_64 SSE2/AVX2 intrinsics
+  for `find_quote_or_backslash` and `find_escape`. Up to 5.6× over u128 SWAR.
+- **`fast_float2`** for parsing, **`ryu`** or **`zmij`** for serializing.
 
 ## Serde attributes supported
 

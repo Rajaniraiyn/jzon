@@ -88,25 +88,9 @@ let v: serde_json::Value = serde_json::from_str(src).unwrap();
 
 ## Performance
 
-GHA matrix, criterion 0.5. Best feature combo per platform. Full table:
-[`BENCHMARKS.md`](../../BENCHMARKS.md).
-
-| Platform | twitter de | twitter ser | citm de | canada ser |
-|---|--:|--:|--:|--:|
-| Apple Silicon (macOS)    | 1.35 GiB/s | **53.6 GiB/s** | 2.45 GiB/s | 880 MiB/s |
-| x86_64 Linux (AVX2)      | 1.22 GiB/s | 47.5 GiB/s | 2.02 GiB/s | 702 MiB/s |
-| x86_64 Windows (AVX2)    | 1.18 GiB/s | 41.4 GiB/s | 2.01 GiB/s | 453 MiB/s |
-| aarch64 Linux (Graviton) | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
-| Windows on ARM           | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
-
-**Head-to-head ranges** across all 5 platforms × 4 feature combos:
-
-- `twitter` serialize: **2.1–3.6× faster than serde_json**, **1.2–2.4× faster than sonic-rs**
-- `citm_catalog` deserialize: 1.6–2.4× serde_json, 1.3–1.7× sonic-rs, up to 4× simd-json
-- `deep_nested` deserialize: 1.4–2.0× serde_json, 1.5–2.2× sonic-rs, up to 7.8× simd-json
-
-Where competitors still win: `canada` deserialize (sonic-rs's SIMD float parser),
-`string_heavy` deserialize vs sonic-rs (3–14% slower).
+Up to **3.6× serde_json**, **2.4× sonic-rs**, **7.8× simd-json**.
+Top: 53.6 GiB/s twitter serialize on Apple Silicon.
+Full matrix: [`BENCHMARKS.md`](../../BENCHMARKS.md).
 
 ## Other Crates
 
