@@ -24,7 +24,7 @@ on:
         type: string
         default: ''
       runners:
-        description: 'Comma-separated subset of {x86_64-linux,aarch64-linux,aarch64-darwin,x86_64-darwin,x86_64-windows} (empty = all)'
+        description: 'Comma-separated subset of {x86_64-linux,aarch64-linux,aarch64-darwin,x86_64-darwin,x86_64-windows,aarch64-windows} (empty = all)'
         type: string
         default: ''
       measurement_time:
@@ -47,7 +47,8 @@ jobs:
             {"name":"aarch64-linux","os":"ubuntu-24.04-arm","triple":"aarch64-unknown-linux-gnu"},
             {"name":"aarch64-darwin","os":"macos-latest","triple":"aarch64-apple-darwin"},
             {"name":"x86_64-darwin","os":"macos-13","triple":"x86_64-apple-darwin"},
-            {"name":"x86_64-windows","os":"windows-latest","triple":"x86_64-pc-windows-msvc"}
+            {"name":"x86_64-windows","os":"windows-latest","triple":"x86_64-pc-windows-msvc"},
+            {"name":"aarch64-windows","os":"windows-11-arm","triple":"aarch64-pc-windows-msvc"}
           ]'
           REQ='${{ inputs.runners }}'
           if [ -z "$REQ" ]; then

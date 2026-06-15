@@ -74,8 +74,10 @@ serde_json = { package = "jzon-rs-compat", version = "0.1" }
 |---------|---------|-------------|
 | `derive` | ✓ | `#[derive(ToJson, FromJson)]` proc-macros |
 | `simd` | | u128 SWAR (16 bytes/iter) |
+| `simd-intrinsics` | | Hand-written `std::arch` kernels — aarch64 NEON, x86_64 SSE2/AVX2 |
 | `simd + unstable` | | `std::simd` portable SIMD, 32–64 bytes/iter (nightly) |
 | `fast-float` | | ryu for serialization, fast_float2 for parsing |
+| `zmij-float-ser` | | [zmij](https://crates.io/crates/zmij) (Schubfach+yy) float ser instead of ryu. ~30 % faster on Linux, ~10 % slower on Apple Silicon. MSRV 1.71. |
 | `stats` | | per-parse allocation counters on Scanner |
 
 ### jzon-rs-serde / jzon-rs-compat
