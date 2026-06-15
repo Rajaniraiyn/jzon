@@ -8,18 +8,21 @@ description = "Serde-compatible JSON engine backed by jzon's SIMD scanner"
 name = "jzon-rs-serde"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [features]
-default = []
+default    = []
 simd       = ["jzon/simd"]
 fast-float = ["jzon/fast-float"]
 unstable   = ["jzon/unstable"]
+stats      = ["jzon/stats"]
 
 [dependencies]
-jzon  = { package = "jzon-rs", path = "../jzon", version = "0.1" }
-serde = { version = "1", features = ["derive"] }
+jzon  = { package = "jzon-rs", path = "../jzon", version = "0.1", default-features = false }
+serde = { version = "1", default-features = false, features = ["std"] }
 
 [dev-dependencies]
+serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [lib]

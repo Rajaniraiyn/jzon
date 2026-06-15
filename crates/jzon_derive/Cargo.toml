@@ -8,6 +8,7 @@ description = "Proc-macro crate for #[derive(ToJson, FromJson)] — part of jzon
 name = "jzon-rs-derive"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [lib]
 proc-macro = true

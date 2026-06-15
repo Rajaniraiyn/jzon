@@ -8,30 +8,33 @@
 //!
 //! ## Cargo features
 //!
-//! | Feature | Effect |
-//! |---------|--------|
-//! | *(none)* | SWAR u64 scanning (8 B/iter, safe, zero deps) |
-//! | `simd` | Adds u128 SWAR (16 B/iter) on all platforms |
-//! | `simd + unstable` | Uses `std::simd` portable SIMD (32–64 B/iter) on nightly Rust |
-//! | `stats` | Attaches a `ScannerStats` to every `Scanner` to track allocations and cache hits |
+//! | Feature | Default | Effect |
+//! |---------|---------|--------|
+//! | `derive` | ✓ | `#[derive(ToJson, FromJson)]` proc-macros |
+//! | `simd` | | u128 SWAR scanning (16 B/iter) |
+//! | `simd + unstable` | | `std::simd` portable SIMD (32–64 B/iter, nightly) |
+//! | `fast-float` | | `ryu` serialization, `fast_float2` parsing |
+//! | `stats` | | `ScannerStats` allocation/cache-hit counters |
+//!
+//! For serde integration see [`jzon-rs-serde`](https://crates.io/crates/jzon-rs-serde).
+//! For a `serde_json` drop-in see [`jzon-rs-compat`](https://crates.io/crates/jzon-rs-compat).
 //!
 //! ## Zero-copy deserialization
 //!
 //! Fields typed `&'de str` borrow **directly** from the input — no `String` is
-//! allocated unless the JSON string contains escape sequences (in which case
-//! `Error::EscapedString` is returned so the user can switch to `String`).
+//! allocated unless the JSON string contains escape sequences.
 //!
 //! ## Field-hint cache
 //!
 //! The generated `FromJson` impl maintains a one-word *field-hint* variable
-//! that predicts which field key to expect next.  For JSON payloads whose
-//! field order matches the struct definition — the common case — almost every
-//! key dispatch is O(1) without hashing.
+//! that predicts which field key to expect next.  For JSON whose field order
+//! matches the struct definition — the common case — almost every key dispatch
+//! is O(1) without hashing.
 //!
 //! ## Safe Rust only
 //!
-//! There are **no `unsafe` blocks** anywhere in this crate.  All SIMD scanning
-//! is done through `std::simd` (nightly) or pure u64/u128 arithmetic (SWAR).
+//! There are **no `unsafe` blocks** in this crate.  All SIMD scanning uses
+//! `std::simd` (nightly) or pure u64/u128 arithmetic (SWAR).
 //!
 //! # Quick start
 //!
@@ -42,7 +45,7 @@
 //! #[serde(rename_all = "camelCase")]
 //! struct User<'a> {
 //!     user_id:  u64,
-//!     name:     &'a str,       // zero-copy borrow
+//!     name:     &'a str,
 //!     #[serde(skip_serializing_if = "Option::is_none")]
 //!     email:    Option<String>,
 //!     #[serde(default)]
@@ -54,7 +57,7 @@
 //! let out = user.to_json_string();
 //! ```
 
-// Enable `std::simd` portable SIMD on nightly when `unstable` feature is set.
+// Enable `std::simd` portable SIMD on nightly when both features are set.
 #![cfg_attr(all(feature = "simd", feature = "unstable"), feature(portable_simd))]
 
 pub mod error;
@@ -72,7 +75,5 @@ pub use ser::ToJson;
 pub use de::FromJson;
 pub use fixed::{FixedBuf, ToJsonExt, json_str_len};
 
-// Re-export the derive macros under the same names as the traits.
-// In Rust, traits live in the type namespace and derive macros live in the
-// macro namespace — they can share the same identifier without conflict.
+#[cfg(feature = "derive")]
 pub use jzon_derive::{FromJson, ToJson};

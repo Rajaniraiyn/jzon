@@ -1,8 +1,9 @@
-# jzon
+# jzon-rs
 
 [![Crates.io](https://img.shields.io/crates/v/jzon-rs.svg)](https://crates.io/crates/jzon-rs)
 [![Docs.rs](https://docs.rs/jzon-rs/badge.svg)](https://docs.rs/jzon-rs)
 [![CI](https://github.com/Rajaniraiyn/jzon-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/Rajaniraiyn/jzon-rs/actions)
+[![MSRV](https://img.shields.io/badge/rustc-1.65%2B-blue.svg)](https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html)
 
 Zero-copy JSON for Rust. A proc-macro generates a typed, monomorphised
 parser and serializer per struct at compile time — no runtime dispatch,
@@ -10,11 +11,13 @@ no intermediate `Value`, no unnecessary allocations.
 
 ## Three modes
 
-### A — custom derive (fastest)
+### Mode A — custom derive (fastest)
+
+Add `jzon-rs`. The `derive` feature is on by default.
 
 ```toml
 [dependencies]
-jzon = "0.1"
+jzon-rs = "0.1"
 ```
 
 ```rust
@@ -32,78 +35,97 @@ let user = User::from_json_str(input)?;
 let out  = user.to_json_string();
 ```
 
-### B — any serde type
+### Mode B — any serde type
+
+Add `jzon-rs-serde`. No other changes to your code.
 
 ```toml
 [dependencies]
-jzon_serde = "0.1"
+jzon-rs-serde = "0.1"
+serde = { version = "1", features = ["derive"] }
 ```
 
 ```rust
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+struct User<'a> { id: u64, name: &'a str }
+
 let user: User = jzon_serde::from_str(input)?;
 let out = jzon_serde::to_string(&user)?;
 ```
 
-### C — drop-in for serde_json
+### Mode C — drop-in for serde_json
+
+Add one line to your workspace `Cargo.toml`. Zero code changes required — every
+`serde_json` call across your entire dep tree (reqwest, axum, etc.) routes
+through jzon automatically.
 
 ```toml
-# Cargo.toml
 [patch.crates-io]
-serde_json = { path = "crates/jzon_compat" }
+serde_json = { package = "jzon-rs-compat", version = "0.1" }
 ```
-
-Every `serde_json::from_str` / `to_string` call — including inside
-reqwest, axum, and other deps — routes through jzon automatically.
 
 ## Features
 
-| Feature | What it does |
-|---------|-------------|
-| *(default)* | SWAR u64 string scanning (8 bytes/iter, no unsafe) |
-| `simd` | u128 SWAR (16 bytes/iter) |
-| `simd + unstable` | `std::simd` portable SIMD, 32–64 bytes/iter (nightly) |
-| `fast-float` | ryu for serialization, fast_float2 for parsing |
-| `stats` | per-parse allocation counters on Scanner |
+### jzon-rs
+
+| Feature | Default | What it does |
+|---------|---------|-------------|
+| `derive` | ✓ | `#[derive(ToJson, FromJson)]` proc-macros |
+| `simd` | | u128 SWAR (16 bytes/iter) |
+| `simd + unstable` | | `std::simd` portable SIMD, 32–64 bytes/iter (nightly) |
+| `fast-float` | | ryu for serialization, fast_float2 for parsing |
+| `stats` | | per-parse allocation counters on Scanner |
+
+### jzon-rs-serde / jzon-rs-compat
+
+Both crates expose the same flags: `simd`, `fast-float`, `unstable`, `stats`.
+`jzon-rs-compat` also has `fast-float` **on by default** (sensible for a
+drop-in replacement).
 
 ## Benchmarks
 
-macOS arm64, `--features simd,fast-float`
+Apple M2, `--features simd,fast-float`, criterion 0.5
 
 **Deserialization**
 
 | | serde_json | sonic-rs | simd-json | jzon/A | jzon/B |
 |-|-----------|---------|---------|-------|-------|
-| twitter.json 617KB | 327µs | 345µs | 332µs | **316µs** ★ | 345µs |
-| canada.json 2.2MB | 3.51ms | 3.03ms | 3.40ms | **2.43ms** ★ | — |
-| citm_catalog 1.6MB | 945µs | 767µs | — | — | **545µs** ★ |
-| micro Point 25B | 88ns | 75ns | 210ns | **41ns** ★ | 76ns |
-| micro Record 52B | 79ns | 89ns | — | **74ns** ★ | 87ns |
+| twitter.json 617KB | 354µs | 365µs | 376µs | 360µs | 385µs |
+| canada.json 2.2MB | 3.80ms | 3.32ms | 3.71ms | **2.66ms** ★ | — |
+| citm_catalog 1.6MB | 1.02ms | 837µs | 907µs | **589µs** ★ | 595µs |
+| micro Point 25B | 83ns | 71ns | 231ns | **47ns** ★ | 88ns |
+| micro Record 52B | 92ns | 102ns | 285ns | **81ns** ★ | 108ns |
 
 **Serialization**
 
 | | serde_json | sonic-rs | jzon/A |
 |-|-----------|---------|-------|
-| twitter.json 617KB | 28µs | 10.4µs | **10.2µs** ★ |
-| micro Record | 61ns | 72ns | **50ns** ★ |
+| twitter.json 617KB | 31.6µs | 11.5µs | **11.3µs** ★ |
+| micro Record | 69ns | 61ns | **52ns** ★ |
 
-★ = fastest. jzon/A wins or ties on every benchmark except long-string
-serialization where sonic-rs uses NEON SIMD at 16–32 bytes/iter.
+★ = fastest. jzon/A wins on numeric/struct-heavy workloads and micro benchmarks.
+Twitter de is within noise (360µs vs 354µs). Long-string serialization favours
+sonic-rs which uses NEON SIMD; jzon does not yet have stable-Rust SIMD for that path.
 
 ## How it works
 
-**Deserialization**: the derive macro generates a field-dispatch loop where
-keys ≤ 8 bytes compare as a single `u64` (one instruction), and larger
-structs use a compile-time minimal perfect hash for O(1) dispatch.
-Float fields use `fast_float2::parse_partial` — one scan, not two.
-`&'de str` fields borrow from the input with no allocation.
+**Deserialization** — the derive macro generates a field-dispatch loop where
+keys ≤ 8 bytes compare as a single `u64` (one CPU instruction). A one-word
+*field-hint* variable predicts the next key; for in-order JSON this makes
+almost every dispatch O(1) without hashing. `&'de str` fields borrow directly
+from the input — no allocation unless the string contains escape sequences.
+With `fast-float`, floats are parsed in one pass via `fast_float2`.
 
-**Serialization**: field keys are `b"\"name\":"` byte literals (compile-time
-constants). Integers use custom digit writers; floats use ryu.
-String escaping uses SWAR u64/u128 arithmetic to bulk-copy safe byte runs.
+**Serialization** — field keys are compile-time `b"\"name\":"` byte literals.
+Integer and float rendering use `ryu`/custom digit writers. String escaping
+bulk-copies safe byte runs using SWAR u64/u128 arithmetic (or `std::simd`
+on nightly), falling back to per-byte for escape characters.
 
-**Serde layer**: `jzon_serde` implements `serde::Serializer/Deserializer`
-backed by the same scanner. `visit_borrowed_str` propagates zero-copy
-borrowing to any type deriving `serde::Deserialize`.
+**Serde layer** — `jzon-rs-serde` wraps the same scanner behind a
+`serde::Serializer`/`Deserializer`. `visit_borrowed_str` propagates zero-copy
+borrowing to any `#[derive(Deserialize)]` type.
 
 ## Serde attributes supported
 

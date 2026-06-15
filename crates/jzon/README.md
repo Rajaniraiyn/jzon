@@ -3,6 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/jzon-rs.svg)](https://crates.io/crates/jzon-rs)
 [![docs.rs](https://docs.rs/jzon-rs/badge.svg)](https://docs.rs/jzon-rs)
 [![CI](https://github.com/Rajaniraiyn/jzon-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/Rajaniraiyn/jzon-rs/actions)
+[![MSRV](https://img.shields.io/badge/rustc-1.65%2B-blue.svg)](https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html)
 
 Zero-copy JSON for Rust with compile-time generated parsers.
 
@@ -30,29 +31,76 @@ fn main() {
 }
 ```
 
+## Optional features
+
+| Feature | What it adds |
+|---------|-------------|
+| `serde` | `jzon::from_str` / `to_string` for any `serde`-deriving type |
+| `compat` | `jzon::compat` — `serde_json`-compatible API (`Value`, `json!`, etc.) |
+| `simd` | u128 SWAR scanning (16 bytes/iter) |
+| `fast-float` | `ryu` float serialization, `fast_float2` parsing |
+| `unstable` | `std::simd` portable SIMD 32–64 bytes/iter (nightly only) |
+| `stats` | Allocation counters on `Scanner` |
+
+### Using the serde feature
+
+```toml
+[dependencies]
+jzon-rs = { version = "0.1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+```
+
+```rust
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+struct User<'a> { id: u64, name: &'a str }
+
+let user: User = jzon::from_str(src).unwrap();
+let out = jzon::to_string(&user).unwrap();
+```
+
+### Using the compat feature
+
+```toml
+[dependencies]
+jzon-rs = { version = "0.1", features = ["compat"] }
+```
+
+```rust
+use jzon::compat as serde_json;  // hot-path via jzon, types from serde_json
+
+let user: User = serde_json::from_str(src).unwrap();
+let v: serde_json::Value = serde_json::from_str(src).unwrap();
+```
+
 ## Highlights
 
 - **Zero-copy** — `&'a str` fields borrow directly from the input; no heap allocation for string data.
-- **SIMD scanning** — uses vectorised byte-search on x86-64 and aarch64 for structural character detection.
+- **SIMD scanning** — vectorised byte-search on x86-64 and aarch64 for structural character detection.
 - **No `unsafe` in user code** — the derive macros emit fully safe Rust.
 - **serde attribute compatibility** — `#[serde(rename = "…")]`, `#[serde(skip_serializing_if)]`, etc. are honoured by the derive macros.
 
 ## Performance
 
-Benchmarked on Apple M2, `rustc 1.78`, release mode, `criterion` 0.5.
+Apple M2, `--features simd,fast-float`, criterion 0.5.
 
-| Dataset | jzon | serde\_json | sonic-rs |
-|---------|------|------------|---------|
-| twitter de | **★ 316 µs** | 327 µs | 345 µs |
-| canada de | **★ 2.43 ms** | 3.51 ms | 3.03 ms |
-| micro `Point` de | **★ 41 ns** | 74 ns | 63 ns |
+| Dataset | jzon/A | serde\_json | sonic-rs |
+|---------|--------|------------|---------|
+| twitter de | 360 µs | 354 µs | 365 µs |
+| canada de | **★ 2.66 ms** | 3.80 ms | 3.32 ms |
+| citm_catalog de | **★ 589 µs** | 1.02 ms | 837 µs |
+| micro Point de | **★ 47 ns** | 83 ns | 71 ns |
+| micro Record de | **★ 81 ns** | 92 ns | 102 ns |
+| twitter ser | **★ 11.3 µs** | 31.6 µs | 11.5 µs |
+| micro Record ser | **★ 52 ns** | 69 ns | 61 ns |
 
 ## Other Crates
 
 | Crate | Purpose |
 |-------|---------|
-| [`jzon-rs-serde`](https://crates.io/crates/jzon-rs-serde) | SIMD-backed serde `Serializer`/`Deserializer` for any `serde`-deriving type |
-| [`jzon-rs-compat`](https://crates.io/crates/jzon-rs-compat) | Drop-in `serde_json` replacement via Cargo's `[patch]` mechanism |
+| [`jzon-rs-serde`](https://crates.io/crates/jzon-rs-serde) | Standalone serde `Serializer`/`Deserializer` (included via `serde` feature) |
+| [`jzon-rs-compat`](https://crates.io/crates/jzon-rs-compat) | Cargo `[patch]` to replace `serde_json` for the whole dep tree |
 
 ## License
 

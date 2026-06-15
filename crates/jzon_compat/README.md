@@ -2,6 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/jzon-rs-compat.svg)](https://crates.io/crates/jzon-rs-compat)
 [![docs.rs](https://docs.rs/jzon-rs-compat/badge.svg)](https://docs.rs/jzon-rs-compat)
+[![MSRV](https://img.shields.io/badge/rustc-1.65%2B-blue.svg)](https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html)
 
 Drop-in replacement for `serde_json` via Cargo's `[patch]` mechanism.
 
@@ -15,6 +16,17 @@ serde_json = { package = "jzon-rs-compat", version = "0.1" }
 ```
 
 That's it. Cargo replaces every transitive `serde_json` dependency with this crate.
+
+## Feature Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `fast-float` | on | `ryu` float serialization, `fast_float2` parsing |
+| `simd` | off | u128 SWAR scanning (16 bytes/iter) |
+| `unstable` | off | `std::simd` portable SIMD 32–64 bytes/iter (nightly only) |
+| `stats` | off | Allocation counters on the underlying Scanner |
+
+To disable the fast-float default: `jzon-rs-compat = { version = "0.1", default-features = false }`.
 
 ## What it does
 

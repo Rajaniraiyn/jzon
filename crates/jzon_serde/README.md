@@ -2,6 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/jzon-rs-serde.svg)](https://crates.io/crates/jzon-rs-serde)
 [![docs.rs](https://docs.rs/jzon-rs-serde/badge.svg)](https://docs.rs/jzon-rs-serde)
+[![MSRV](https://img.shields.io/badge/rustc-1.65%2B-blue.svg)](https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html)
 
 SIMD-backed serde `Serializer`/`Deserializer` for any type deriving `serde::Serialize`/`serde::Deserialize`.
 
@@ -38,9 +39,10 @@ Feature flags mirror those of [jzon-rs](https://crates.io/crates/jzon-rs).
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `simd` | on | Enable SIMD structural scanning |
-| `float-ryu` | on | Use `ryu` for fast float serialization |
-| `int-itoa` | on | Use `itoa` for fast integer serialization |
+| `simd` | off | u128 SWAR (16 bytes/iter) scanning |
+| `fast-float` | off | `ryu` float serialization, `fast_float2` parsing |
+| `unstable` | off | `std::simd` portable SIMD 32–64 bytes/iter (nightly only) |
+| `stats` | off | Allocation counters on the underlying Scanner |
 
 ## Part of the jzon family
 
