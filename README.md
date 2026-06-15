@@ -99,10 +99,21 @@ platform — full matrix in [`BENCHMARKS.md`](./BENCHMARKS.md).
 | aarch64 Linux (Graviton)       | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
 | Windows on ARM (aarch64)       | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
 
-vs `sonic-rs` on the same matrix:
-twitter ser **1.4–3× faster**, citm_catalog de **+37–49% faster**,
-deep_nested de **+30–70% faster**. Full per-runner comparison in
-[`BENCHMARKS.md`](./BENCHMARKS.md).
+**Head-to-head** (range across all 5 platforms × 4 feature combos):
+
+| Workload | vs `serde_json` | vs `sonic-rs` | vs `simd-json` |
+|---|---|---|---|
+| `twitter` serialize        | **2.1–3.6× faster** | **1.2–2.4× faster** | — (no ser bench) |
+| `citm_catalog` deserialize | **1.6–2.4× faster** | 1.3–1.7× faster     | up to **4× faster** |
+| `deep_nested` deserialize  | 1.4–2.0× faster     | 1.5–2.2× faster     | up to **7.8× faster** |
+| `string_heavy` deserialize | +10–17%             | _0.86–0.97× (slight loss)_ | 1.2–2.3× faster |
+| `twitter` deserialize      | _parity_ (0.84–0.97×) | _parity_ (0.84–1.13×) | 1.3–2.3× faster |
+| `canada` deserialize       | _loses on Linux/macOS_ | _loses on Linux/macOS_ | mixed |
+
+Honest gaps: `canada` deserialize loses on Linux/macOS where sonic-rs's
+SIMD float parser wins; `string_heavy` deserialize loses to sonic-rs's
+SIMD string scan by 3–14%; `twitter` deserialize is at parity. Wins are
+serialization and structural-heavy deserialization.
 
 ## How it works
 

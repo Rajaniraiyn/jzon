@@ -99,8 +99,14 @@ GHA matrix, criterion 0.5. Best feature combo per platform. Full table:
 | aarch64 Linux (Graviton) | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
 | Windows on ARM           | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
 
-vs `sonic-rs` on the same matrix: twitter ser 1.4–3× faster,
-citm_catalog de +37–49% faster.
+**Head-to-head ranges** across all 5 platforms × 4 feature combos:
+
+- `twitter` serialize: **2.1–3.6× faster than serde_json**, **1.2–2.4× faster than sonic-rs**
+- `citm_catalog` deserialize: 1.6–2.4× serde_json, 1.3–1.7× sonic-rs, up to 4× simd-json
+- `deep_nested` deserialize: 1.4–2.0× serde_json, 1.5–2.2× sonic-rs, up to 7.8× simd-json
+
+Where competitors still win: `canada` deserialize (sonic-rs's SIMD float parser),
+`string_heavy` deserialize vs sonic-rs (3–14% slower).
 
 ## Other Crates
 

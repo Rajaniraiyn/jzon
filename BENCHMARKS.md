@@ -104,6 +104,45 @@ newer LLVM.
 | x86_64-windows | canada/serialize          | 415.0 MiB/s | **453.4 MiB/s** |
 | x86_64-windows | string_heavy/deserialize  | **632.8 MiB/s** | 569.3 MiB/s |
 
+## Head-to-head vs other Rust JSON libraries
+
+Same `bench_cmp` benches, same runners. `simd-json` has no serialize
+workloads in this bench file.
+
+### `twitter` serialize — GiB/s, best combo per platform
+
+| Platform | jzon | serde_json | sonic-rs |
+|---|--:|--:|--:|
+| Apple Silicon macOS     | **53.6** | 17.5 | 28.2 |
+| x86_64 Linux (AVX2)     | **47.5** | 14.6 | 31.0 |
+| x86_64 Windows (AVX2)   | **41.4** | 13.4 | 20.1 |
+| aarch64 Linux (Graviton)| **39.5** | 18.2 | 31.4 |
+| Windows on ARM          | **38.2** | 18.0 | 22.8 |
+
+### Speedup ranges across the full matrix (5 platforms × 4 feature combos)
+
+| Workload | vs serde_json | vs sonic-rs | vs simd-json |
+|---|---|---|---|
+| `twitter` serialize        | **2.1–3.6× faster** | **1.2–2.4× faster** | — |
+| `citm_catalog` deserialize | 1.6–2.4× faster     | 1.3–1.7× faster     | up to **4× faster** |
+| `deep_nested` deserialize  | 1.4–2.0× faster     | 1.5–2.2× faster     | up to **7.8× faster** |
+| `string_heavy` deserialize | +10–17%             | 0.86–0.97× (loses)  | 1.2–2.3× faster |
+| `twitter` deserialize      | 0.84–0.97× (parity) | 0.84–1.13× (parity) | 1.3–2.3× faster |
+| `canada` deserialize       | 0.68–1.20× (loses Linux/macOS) | 0.61–1.42× (loses Linux/macOS) | 0.83–1.72× mixed |
+| `canada` serialize         | 0.80–1.13× (mixed)  | 0.96–1.46× faster   | — |
+
+### Honest gaps
+
+- `canada` deserialize on aarch64-darwin is the worst case: jzon 344 MiB/s
+  vs sonic-rs 566 MiB/s (~0.61×). sonic-rs's SIMD float parser is the
+  difference; jzon uses `fast_float2` scalar-per-number.
+- `string_heavy` deserialize trails sonic-rs by 3–14% — their SIMD string
+  scan wins; jzon's `find_quote_or_backslash` is competitive in isolation
+  but the unescape path closes the per-iteration gap.
+- `twitter` deserialize is at parity with serde_json (within ±15%);
+  twitter is light on the structural-heavy work where jzon's
+  compile-time codegen wins biggest.
+
 ## Observations
 
 - **zmij** (Schubfach + yy_double) wins float ser on macOS and Linux,
