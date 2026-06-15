@@ -395,7 +395,11 @@ impl<'de> Scanner<'de> {
     /// Unescape a JSON string whose content starts at `content_start` and whose
     /// first backslash is at `self.pos`.  Returns the fully decoded `String`.
     fn unescape_from(&mut self, content_start: usize) -> Result<String, Error> {
-        let mut buf: Vec<u8> = self.input[content_start..self.pos].to_vec();
+        // Output is at most as long as the remaining input — preallocating
+        // avoids the Vec-doubling realloc chain on escape-heavy strings.
+        let mut buf: Vec<u8> =
+            Vec::with_capacity(self.input.len().saturating_sub(content_start));
+        buf.extend_from_slice(&self.input[content_start..self.pos]);
 
         loop {
             match self.input.get(self.pos) {

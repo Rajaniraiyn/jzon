@@ -4,3 +4,5 @@ bench_results/
 *.swp
 .DS_Store
 doc/
+findings/
+.claude/

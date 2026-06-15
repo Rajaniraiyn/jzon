@@ -110,10 +110,30 @@ pub fn find_quote_or_backslash_portable64(input: &[u8], start: usize) -> usize {
 /// Dispatch to the widest safe implementation available for this build.
 #[inline]
 pub fn find(input: &[u8], start: usize) -> usize {
-    #[cfg(all(feature = "simd", feature = "unstable"))]
+    #[cfg(all(feature = "simd-intrinsics", target_arch = "aarch64"))]
+    return crate::simd_arch::neon::find_quote_or_backslash_64(input, start);
+
+    #[cfg(all(feature = "simd-intrinsics", target_arch = "x86_64"))]
+    return crate::simd_arch::x86::find_quote_or_backslash_32(input, start);
+
+    #[cfg(all(
+        feature = "simd",
+        feature = "unstable",
+        not(any(
+            all(feature = "simd-intrinsics", target_arch = "aarch64"),
+            all(feature = "simd-intrinsics", target_arch = "x86_64"),
+        )),
+    ))]
     return find_quote_or_backslash_portable64(input, start);
 
-    #[cfg(all(feature = "simd", not(feature = "unstable")))]
+    #[cfg(all(
+        feature = "simd",
+        not(feature = "unstable"),
+        not(any(
+            all(feature = "simd-intrinsics", target_arch = "aarch64"),
+            all(feature = "simd-intrinsics", target_arch = "x86_64"),
+        )),
+    ))]
     return find_quote_or_backslash_simd16(input, start);
 
     #[cfg(not(feature = "simd"))]
@@ -121,6 +141,7 @@ pub fn find(input: &[u8], start: usize) -> usize {
 }
 
 #[cfg(feature = "simd")]
+#[allow(dead_code)] // used on non-aarch64 / when simd-intrinsics is off
 #[inline(always)]
 const fn swar128_has_ctrl(x: u128) -> u128 {
     // Bytes < 0x20: top 3 bits all zero.
@@ -133,7 +154,8 @@ const fn swar128_has_ctrl(x: u128) -> u128 {
 /// Scan `input[start..]` for the first byte needing JSON string escaping
 /// (`"`, `\`, or any byte < 0x20) using 16-byte u128 SWAR.
 #[cfg(feature = "simd")]
-fn find_escape_simd16(input: &[u8], start: usize) -> usize {
+#[allow(dead_code)]
+pub fn find_escape_simd16(input: &[u8], start: usize) -> usize {
     let mut i = start;
 
     while i + 16 <= input.len() {
@@ -154,8 +176,9 @@ fn find_escape_simd16(input: &[u8], start: usize) -> usize {
     find_escape_scalar(input, i)
 }
 
+#[allow(dead_code)]
 #[inline]
-fn find_escape_scalar(input: &[u8], start: usize) -> usize {
+pub fn find_escape_scalar(input: &[u8], start: usize) -> usize {
     let mut i = start;
     while i < input.len() {
         let b = input[i];
@@ -194,10 +217,30 @@ fn find_escape_simd32(input: &[u8], start: usize) -> usize {
 /// Find the first byte needing JSON string escaping (`"`, `\`, or `< 0x20`).
 #[inline]
 pub fn find_escape(input: &[u8], start: usize) -> usize {
-    #[cfg(all(feature = "simd", feature = "unstable"))]
+    #[cfg(all(feature = "simd-intrinsics", target_arch = "aarch64"))]
+    return crate::simd_arch::neon::find_escape_64(input, start);
+
+    #[cfg(all(feature = "simd-intrinsics", target_arch = "x86_64"))]
+    return crate::simd_arch::x86::find_escape_32(input, start);
+
+    #[cfg(all(
+        feature = "simd",
+        feature = "unstable",
+        not(any(
+            all(feature = "simd-intrinsics", target_arch = "aarch64"),
+            all(feature = "simd-intrinsics", target_arch = "x86_64"),
+        )),
+    ))]
     return find_escape_simd32(input, start);
 
-    #[cfg(all(feature = "simd", not(feature = "unstable")))]
+    #[cfg(all(
+        feature = "simd",
+        not(feature = "unstable"),
+        not(any(
+            all(feature = "simd-intrinsics", target_arch = "aarch64"),
+            all(feature = "simd-intrinsics", target_arch = "x86_64"),
+        )),
+    ))]
     return find_escape_simd16(input, start);
 
     #[cfg(not(feature = "simd"))]
