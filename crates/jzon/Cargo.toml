@@ -18,6 +18,7 @@ default    = ["derive"]
 derive     = ["dep:jzon_derive"]
 simd       = []
 unstable   = []
+simd-intrinsics = ["simd"]
 stats      = []
 fast-float = ["dep:ryu", "dep:fast-float2"]
 zmij-float-ser = ["dep:zmij"]
@@ -39,6 +40,10 @@ criterion  = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
 name    = "bench_cmp"
+harness = false
+
+[[bench]]
+name    = "bench_simd"
 harness = false
 
 [[test]]

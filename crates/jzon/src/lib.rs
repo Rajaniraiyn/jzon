@@ -65,6 +65,8 @@ pub mod scanner;
 pub mod ser;
 pub mod de;
 pub mod simd;
+#[cfg(feature = "simd-intrinsics")]
+pub mod simd_arch;
 pub mod fixed;
 #[cfg(feature = "stats")]
 pub mod stats;
