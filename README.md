@@ -88,28 +88,21 @@ drop-in replacement).
 
 ## Benchmarks
 
-Apple M2, `--features simd,fast-float`, criterion 0.5
+GHA matrix, criterion 0.5, `bench_cmp` workloads. Best feature combo per
+platform — full matrix in [`BENCHMARKS.md`](./BENCHMARKS.md).
 
-**Deserialization**
+| Platform | twitter de | twitter ser | citm de | canada ser |
+|---|--:|--:|--:|--:|
+| Apple Silicon (M-series macOS) | 1.35 GiB/s | **53.6 GiB/s** | 2.45 GiB/s | 880 MiB/s |
+| x86_64 Linux (AVX2)            | 1.22 GiB/s | 47.5 GiB/s | 2.02 GiB/s | 702 MiB/s |
+| x86_64 Windows (AVX2)          | 1.18 GiB/s | 41.4 GiB/s | 2.01 GiB/s | 453 MiB/s |
+| aarch64 Linux (Graviton)       | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
+| Windows on ARM (aarch64)       | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
 
-| | serde_json | sonic-rs | simd-json | jzon/A | jzon/B |
-|-|-----------|---------|---------|-------|-------|
-| twitter.json 617KB | 354µs | 365µs | 376µs | 360µs | 385µs |
-| canada.json 2.2MB | 3.80ms | 3.32ms | 3.71ms | **2.66ms** ★ | — |
-| citm_catalog 1.6MB | 1.02ms | 837µs | 907µs | **589µs** ★ | 595µs |
-| micro Point 25B | 83ns | 71ns | 231ns | **47ns** ★ | 88ns |
-| micro Record 52B | 92ns | 102ns | 285ns | **81ns** ★ | 108ns |
-
-**Serialization**
-
-| | serde_json | sonic-rs | jzon/A |
-|-|-----------|---------|-------|
-| twitter.json 617KB | 31.6µs | 11.5µs | **11.3µs** ★ |
-| micro Record | 69ns | 61ns | **52ns** ★ |
-
-★ = fastest. jzon/A wins on numeric/struct-heavy workloads and micro benchmarks.
-Twitter de is within noise (360µs vs 354µs). Long-string serialization favours
-sonic-rs which uses NEON SIMD; jzon does not yet have stable-Rust SIMD for that path.
+vs `sonic-rs` on the same matrix:
+twitter ser **1.4–3× faster**, citm_catalog de **+37–49% faster**,
+deep_nested de **+30–70% faster**. Full per-runner comparison in
+[`BENCHMARKS.md`](./BENCHMARKS.md).
 
 ## How it works
 

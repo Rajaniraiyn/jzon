@@ -88,17 +88,19 @@ let v: serde_json::Value = serde_json::from_str(src).unwrap();
 
 ## Performance
 
-Apple M2, `--features simd,fast-float`, criterion 0.5.
+GHA matrix, criterion 0.5. Best feature combo per platform. Full table:
+[`BENCHMARKS.md`](../../BENCHMARKS.md).
 
-| Dataset | jzon/A | serde\_json | sonic-rs |
-|---------|--------|------------|---------|
-| twitter de | 360 µs | 354 µs | 365 µs |
-| canada de | **★ 2.66 ms** | 3.80 ms | 3.32 ms |
-| citm_catalog de | **★ 589 µs** | 1.02 ms | 837 µs |
-| micro Point de | **★ 47 ns** | 83 ns | 71 ns |
-| micro Record de | **★ 81 ns** | 92 ns | 102 ns |
-| twitter ser | **★ 11.3 µs** | 31.6 µs | 11.5 µs |
-| micro Record ser | **★ 52 ns** | 69 ns | 61 ns |
+| Platform | twitter de | twitter ser | citm de | canada ser |
+|---|--:|--:|--:|--:|
+| Apple Silicon (macOS)    | 1.35 GiB/s | **53.6 GiB/s** | 2.45 GiB/s | 880 MiB/s |
+| x86_64 Linux (AVX2)      | 1.22 GiB/s | 47.5 GiB/s | 2.02 GiB/s | 702 MiB/s |
+| x86_64 Windows (AVX2)    | 1.18 GiB/s | 41.4 GiB/s | 2.01 GiB/s | 453 MiB/s |
+| aarch64 Linux (Graviton) | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
+| Windows on ARM           | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
+
+vs `sonic-rs` on the same matrix: twitter ser 1.4–3× faster,
+citm_catalog de +37–49% faster.
 
 ## Other Crates
 
