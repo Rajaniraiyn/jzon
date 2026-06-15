@@ -45,20 +45,15 @@ fn main() {
 
 ### Float serialization backend
 
-`jzon-rs` ships two `f64`/`f32` → string backends. Default is [`ryu`](https://crates.io/crates/ryu) (via `fast-float`). Opt into [`zmij`](https://crates.io/crates/zmij) with `--features zmij-float-ser`. Measured on the `canada` workload (float-heavy, criterion median, lower is better):
+`zmij-float-ser` swaps `ryu` for [`zmij`](https://crates.io/crates/zmij) (Schubfach + yy_double). On the `canada` workload:
 
-| Platform        | ryu     | zmij    | Δ                       |
-|-----------------|--------:|--------:|------------------------:|
-| aarch64-darwin  | 3.04 ms | 3.39 ms | +11.5% (ryu wins)       |
-| aarch64-linux   | 3.44 ms | 2.33 ms | **−32.1% (zmij wins)**  |
-| x86_64-linux    | 4.30 ms | 3.14 ms | **−26.9% (zmij wins)**  |
+| Platform        | ryu     | zmij    |
+|-----------------|--------:|--------:|
+| aarch64-darwin  | 3.04 ms | 3.39 ms |
+| aarch64-linux   | 3.44 ms | **2.33 ms** |
+| x86_64-linux    | 4.30 ms | **3.14 ms** |
 
-Guidance:
-- **Linux (any arch):** prefer `zmij-float-ser` for float-heavy payloads.
-- **macOS Apple Silicon:** stick with default `ryu`.
-- **MSRV:** `zmij` requires Rust ≥ 1.71 (default `ryu` path works on 1.65).
-- **Binary size:** parity (~±0.3 KiB in the rlib).
-- Deserialization is unaffected — both backends route through `fast-float2` when `fast-float` is enabled.
+Linux → zmij. Apple Silicon → ryu.
 
 ### Using the serde feature
 
