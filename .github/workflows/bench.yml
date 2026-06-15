@@ -1,0 +1,192 @@
+name: bench
+
+# Generic criterion bench runner across target triples.
+# Trigger manually from the Actions tab; pick any bench target via input.
+# Results land in the run summary and as criterion HTML artifacts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bench:
+        description: 'Criterion bench target name (e.g. bench_simd, bench_cmp)'
+        type: string
+        default: 'bench_simd'
+      features:
+        description: 'Cargo feature combo (cs-list; nightly used if "unstable" appears)'
+        type: string
+        default: 'simd,simd-intrinsics'
+      filter:
+        description: 'Criterion filter (regex, empty = all)'
+        type: string
+        default: ''
+      ref:
+        description: 'Git ref to benchmark (branch/tag/sha; empty = workflow ref)'
+        type: string
+        default: ''
+      runners:
+        description: 'Comma-separated subset of {x86_64-linux,aarch64-linux,aarch64-darwin,x86_64-darwin} (empty = all)'
+        type: string
+        default: ''
+      measurement_time:
+        description: 'Per-bench measurement seconds'
+        type: string
+        default: '5'
+
+jobs:
+  matrix:
+    name: pick runners
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.build.outputs.include }}
+    steps:
+      - id: build
+        shell: bash
+        run: |
+          ALL='[
+            {"name":"x86_64-linux","os":"ubuntu-latest","triple":"x86_64-unknown-linux-gnu"},
+            {"name":"aarch64-linux","os":"ubuntu-24.04-arm","triple":"aarch64-unknown-linux-gnu"},
+            {"name":"aarch64-darwin","os":"macos-latest","triple":"aarch64-apple-darwin"},
+            {"name":"x86_64-darwin","os":"macos-13","triple":"x86_64-apple-darwin"}
+          ]'
+          REQ='${{ inputs.runners }}'
+          if [ -z "$REQ" ]; then
+            echo "include=$(echo "$ALL" | jq -c .)" >> "$GITHUB_OUTPUT"
+          else
+            FILTER=$(echo "$REQ" | tr ',' '\n' | jq -R . | jq -cs .)
+            FILTERED=$(echo "$ALL" | jq -c --argjson keep "$FILTER" '[.[] | select(.name as $n | $keep | index($n))]')
+            echo "include=$FILTERED" >> "$GITHUB_OUTPUT"
+          fi
+
+  bench:
+    needs: matrix
+    name: bench / ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.matrix.outputs.include) }}
+    runs-on: ${{ matrix.os }}
+    env:
+      BENCH: ${{ inputs.bench }}
+      FEATURES: ${{ inputs.features }}
+      FILTER: ${{ inputs.filter }}
+      MTIME: ${{ inputs.measurement_time }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Pick toolchain
+        id: tc
+        shell: bash
+        run: |
+          if [[ "$FEATURES" == *"unstable"* ]]; then
+            echo "channel=nightly" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.tc.outputs.channel }}
+          targets: ${{ matrix.triple }}
+
+      - name: Show CPU info
+        shell: bash
+        run: |
+          echo "### CPU — ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            lscpu | grep -E 'Model name|Architecture|Flags|CPU max MHz' | head -10 >> "$GITHUB_STEP_SUMMARY" || true
+          else
+            sysctl -n machdep.cpu.brand_string >> "$GITHUB_STEP_SUMMARY" || true
+            sysctl -n hw.ncpu >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-${{ matrix.name }}-${{ steps.tc.outputs.channel }}
+
+      - name: Build bench ($BENCH)
+        shell: bash
+        run: |
+          cargo build --release -p jzon-rs --bench "$BENCH" \
+            --features "$FEATURES" --target ${{ matrix.triple }}
+
+      - name: Run bench ($BENCH)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p out
+          cargo bench -p jzon-rs --bench "$BENCH" \
+            --features "$FEATURES" \
+            --target ${{ matrix.triple }} \
+            -- --measurement-time "$MTIME" --warm-up-time 1 ${FILTER:+"$FILTER"} \
+            2>&1 | tee out/bench-${{ matrix.name }}.log
+
+      - name: Extract summary table
+        shell: bash
+        run: |
+          LOG="out/bench-${{ matrix.name }}.log"
+          echo "## ${BENCH} — ${{ matrix.name }} (\`${FEATURES}\`)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Bench | Time | Throughput |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          # Criterion text output: "name<spaces>time:   [low mid high]" then a
+          # "thrpt:  [...]" line. Pull both into one row.
+          awk '
+            # Bench-name line: starts at column 0, contains /, has no colon-space pair
+            /^[A-Za-z_][A-Za-z0-9_]*\// && !/time:/ && !/thrpt:/ { name=$0; next }
+            /^[[:space:]]*time:/ {
+              # strip leading "time:" and brackets
+              gsub(/.*\[/, "", $0); gsub(/\].*/, "", $0)
+              t=$0
+              # peek next line for throughput
+              if ((getline nl) > 0 && nl ~ /thrpt:/) {
+                gsub(/.*\[/, "", nl); gsub(/\].*/, "", nl)
+                printf "| `%s` | %s | %s |\n", name, t, nl
+              } else {
+                printf "| `%s` | %s | — |\n", name, t
+              }
+            }
+          ' "$LOG" >> "$GITHUB_STEP_SUMMARY" || true
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "<details><summary>Full bench log</summary>" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -c 60000 "$LOG" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload criterion HTML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-${{ matrix.name }}
+          path: |
+            target/${{ matrix.triple }}/criterion/
+            out/bench-${{ matrix.name }}.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    needs: bench
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Roll-up summary
+        shell: bash
+        run: |
+          echo "## Roll-up across runners" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          for f in artifacts/*/bench-*.log; do
+            [ -f "$f" ] || continue
+            triple=$(basename "$f" .log | sed 's/^bench-//')
+            echo "### $triple" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^[A-Za-z_][A-Za-z0-9_]*/|time:' "$f" | head -300 >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
