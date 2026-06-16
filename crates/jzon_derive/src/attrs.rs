@@ -5,7 +5,7 @@
 //! and `#[serde(…)]` work with jzon out of the box — users need not add any
 //! new annotations.  jzon-specific extensions live under `#[rjson(…)]`.
 
-use syn::{Attribute, ExprPath, LitStr, Result};
+use syn::{Attribute, Error, ExprPath, LitStr, Result};
 
 // ── RenameAll ─────────────────────────────────────────────────────────────────
 
@@ -55,15 +55,10 @@ pub enum FieldDefault {
 pub struct ContainerAttrs {
     pub rename_all: Option<RenameAll>,
     pub deny_unknown_fields: bool,
-    /// `#[serde(default)]` at the container level — missing fields use Default
     pub default: bool,
-    /// `#[serde(tag = "…")]` — internally tagged enum
     pub tag: Option<String>,
-    /// `#[serde(content = "…")]` — adjacently tagged enum
     pub content: Option<String>,
-    /// `#[serde(untagged)]`
     pub untagged: bool,
-    /// `#[serde(transparent)]` — delegate entirely to the single non-skipped field
     pub transparent: bool,
 }
 
@@ -79,6 +74,8 @@ pub struct FieldAttrs {
     pub skip_serializing_if: Option<ExprPath>,
     pub default: FieldDefault,
     pub flatten: bool,
+    /// `#[serde(other)]` on an enum variant — catch-all for unknown variants
+    pub other: bool,
 }
 
 // ── parsing ───────────────────────────────────────────────────────────────────
@@ -92,7 +89,7 @@ fn is_serde_or_rjson(attr: &Attribute) -> Option<bool> {
 pub fn parse_container_attrs(attrs: &[Attribute]) -> Result<ContainerAttrs> {
     let mut out = ContainerAttrs::default();
     for attr in attrs {
-        let Some(_is_rjson) = is_serde_or_rjson(attr) else { continue };
+        let Some(is_rjson) = is_serde_or_rjson(attr) else { continue };
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("rename_all") {
                 let s: LitStr = meta.value()?.parse()?;
@@ -111,8 +108,33 @@ pub fn parse_container_attrs(attrs: &[Attribute]) -> Result<ContainerAttrs> {
                 out.untagged = true;
             } else if meta.path.is_ident("transparent") {
                 out.transparent = true;
+            } else if meta.path.is_ident("rename_all_fields") {
+                // Serde 1.0.152+ alias for rename_all on enum variant fields.
+                // We apply the same rule as rename_all.
+                let s: LitStr = meta.value()?.parse()?;
+                out.rename_all = RenameAll::from_str(&s.value());
+            } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
+                Some("bound" | "crate" | "remote" | "from" | "try_from" | "into"
+                   | "expecting" | "variant_identifier" | "field_identifier")) {
+                // Serde-internal attrs that don't map to jzon codegen. Consume
+                // any value token so syn's parser doesn't choke.
+                if meta.input.peek(syn::Token![=]) { let _: LitStr = meta.value()?.parse()?; }
+            } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
+                Some("serialize_with" | "deserialize_with" | "with")) {
+                return Err(Error::new_spanned(
+                    meta.path,
+                    "jzon does not support serialize_with/deserialize_with/with — \
+                     use jzon_serde (Mode B) or jzon_compat (Mode C) for custom ser/de functions",
+                ));
+            } else if is_rjson {
+                // #[serde(...)] unknowns are silently ignored — serde owns that
+                // namespace and will validate them. #[rjson(...)] unknowns are
+                // a typo or unsupported feature in jzon's own namespace: fail loudly.
+                return Err(meta.error(format!(
+                    "unknown rjson container attribute `{}`",
+                    meta.path.get_ident().map_or_else(|| "?".into(), |i| i.to_string())
+                )));
             }
-            // Silently ignore unrecognised attrs (e.g. `bound`, `crate`, …)
             Ok(())
         })?;
     }
@@ -122,7 +144,7 @@ pub fn parse_container_attrs(attrs: &[Attribute]) -> Result<ContainerAttrs> {
 pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
     let mut out = FieldAttrs::default();
     for attr in attrs {
-        let Some(_is_rjson) = is_serde_or_rjson(attr) else { continue };
+        let Some(is_rjson) = is_serde_or_rjson(attr) else { continue };
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("rename") {
                 let s: LitStr = meta.value()?.parse()?;
@@ -150,6 +172,26 @@ pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
                 }
             } else if meta.path.is_ident("flatten") {
                 out.flatten = true;
+            } else if meta.path.is_ident("other") {
+                out.other = true;
+            } else if meta.path.is_ident("borrow") {
+                // jzon zero-copies &'de str natively; this attr is a no-op for us.
+                if meta.input.peek(syn::Token![=]) { let _: LitStr = meta.value()?.parse()?; }
+            } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
+                Some("bound" | "getter")) {
+                if meta.input.peek(syn::Token![=]) { let _: LitStr = meta.value()?.parse()?; }
+            } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
+                Some("serialize_with" | "deserialize_with" | "with")) {
+                return Err(Error::new_spanned(
+                    meta.path,
+                    "jzon does not support serialize_with/deserialize_with/with — \
+                     use jzon_serde (Mode B) or jzon_compat (Mode C) for custom ser/de functions",
+                ));
+            } else if is_rjson {
+                return Err(meta.error(format!(
+                    "unknown rjson field attribute `{}`",
+                    meta.path.get_ident().map_or_else(|| "?".into(), |i| i.to_string())
+                )));
             }
             Ok(())
         })?;

@@ -1089,3 +1089,38 @@ fn internally_tagged_enum_matches_serde_json() {
     let serde_out = serde_json::to_string(&c).unwrap();
     assert_eq!(jzon_out, serde_out, "jzon output must match serde_json");
 }
+
+// ── serde attr completeness ────────────────────────────────────────────────
+
+#[derive(FromJson, Debug, PartialEq)]
+enum Color {
+    Red,
+    #[serde(rename = "green")]
+    Green,
+    #[serde(alias = "Blue", alias = "blue")]
+    Blue,
+    #[serde(other)]
+    Unknown,
+}
+#[test]
+fn enum_other_catches_unknown_variant() {
+    assert_eq!(Color::from_json_str(r#""Red""#).unwrap(), Color::Red);
+    assert_eq!(Color::from_json_str(r#""green""#).unwrap(), Color::Green);
+    assert_eq!(Color::from_json_str(r#""Blue""#).unwrap(), Color::Blue);
+    assert_eq!(Color::from_json_str(r#""blue""#).unwrap(), Color::Blue);
+    assert_eq!(Color::from_json_str(r#""purple""#).unwrap(), Color::Unknown);
+}
+
+#[derive(FromJson, Debug, PartialEq)]
+struct Borrowable<'a> {
+    #[serde(borrow)]
+    name: &'a str,
+    value: u32,
+}
+#[test]
+fn borrow_attr_is_noop_jzon_zercopies_natively() {
+    let s = r#"{"name":"alice","value":42}"#;
+    let b = Borrowable::from_json_str(s).unwrap();
+    assert_eq!(b.name, "alice");
+    assert_eq!(b.value, 42);
+}

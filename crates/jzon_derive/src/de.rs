@@ -650,9 +650,16 @@ fn expand_enum(input: &DeriveInput) -> Result<TokenStream> {
     let all_unit = variants.iter().all(|v| matches!(&v.fields, Fields::Unit));
 
     if all_unit {
-        let arms: Vec<TokenStream> = variants.iter().map(|v| {
+        let mut other_variant: Option<TokenStream> = None;
+        let arms: Vec<TokenStream> = variants.iter().filter_map(|v| {
             let vident = &v.ident;
-            let vattrs = attrs::parse_field_attrs(&v.attrs)?;
+            let vattrs = match attrs::parse_field_attrs(&v.attrs) {
+                Ok(a) => a, Err(e) => return Some(Err(e)),
+            };
+            if vattrs.other {
+                other_variant = Some(quote! { #ident::#vident });
+                return None; // not a named arm
+            }
             let vname = if let Some(r) = &vattrs.rename {
                 r.clone()
             } else if let Some(rule) = container.rename_all {
@@ -662,8 +669,17 @@ fn expand_enum(input: &DeriveInput) -> Result<TokenStream> {
             };
             let vbytes = vname.as_bytes();
             let byte_str = proc_macro2::Literal::byte_string(vbytes);
-            Ok(quote! { #byte_str => Ok(#ident::#vident), })
+            let alias_pats: Vec<_> = vattrs.aliases.iter()
+                .map(|a| proc_macro2::Literal::byte_string(a.as_bytes()))
+                .collect();
+            Some(Ok(quote! { #byte_str #(| #alias_pats)* => Ok(#ident::#vident), }))
         }).collect::<Result<_>>()?;
+
+        let fallback = if let Some(ov) = other_variant {
+            quote! { _ => Ok(#ov), }
+        } else {
+            quote! { _ => Err(::jzon::Error::UnknownVariant), }
+        };
 
         return Ok(quote! {
             #[automatically_derived]
@@ -677,7 +693,7 @@ fn expand_enum(input: &DeriveInput) -> Result<TokenStream> {
                     let s = js.as_str().as_bytes();
                     match s {
                         #(#arms)*
-                        _ => Err(::jzon::Error::UnknownVariant),
+                        #fallback
                     }
                 }
             }
