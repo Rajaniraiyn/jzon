@@ -1124,3 +1124,72 @@ fn borrow_attr_is_noop_jzon_zercopies_natively() {
     assert_eq!(b.name, "alice");
     assert_eq!(b.value, 42);
 }
+
+// ── #[rjson(serialize_with)] / #[rjson(deserialize_with)] ────────────────────
+
+fn serialize_u64_as_string(v: &u64, w: &mut Vec<u8>) {
+    w.push(b'"');
+    v.json_write(w);
+    w.push(b'"');
+}
+
+fn deserialize_u64_from_string(scanner: &mut jzon::Scanner) -> Result<u64, jzon::Error> {
+    let js = scanner.read_str()?;
+    js.as_str().parse::<u64>().map_err(|_| jzon::Error::UnexpectedToken)
+}
+
+#[derive(ToJson, FromJson, Debug, PartialEq)]
+struct WithCustomSer {
+    #[rjson(serialize_with = "serialize_u64_as_string")]
+    id: u64,
+    name: String,
+}
+
+#[derive(ToJson, FromJson, Debug, PartialEq)]
+struct WithCustomDe {
+    name: String,
+    #[rjson(deserialize_with = "deserialize_u64_from_string")]
+    id: u64,
+}
+
+#[derive(ToJson, FromJson, Debug, PartialEq)]
+struct WithCustomBoth {
+    #[rjson(serialize_with = "serialize_u64_as_string")]
+    #[rjson(deserialize_with = "deserialize_u64_from_string")]
+    id: u64,
+    value: u32,
+}
+
+#[test]
+fn serialize_with_writes_u64_as_string() {
+    let s = WithCustomSer { id: 42, name: "alice".into() };
+    let json = s.to_json_string();
+    // id must be a JSON string, not a number
+    assert!(json.contains("\"42\""), "expected quoted 42, got: {json}");
+    assert!(json.contains("\"alice\""), "got: {json}");
+}
+
+#[test]
+fn deserialize_with_reads_u64_from_string() {
+    let json = r#"{"name":"bob","id":"99"}"#;
+    let s = WithCustomDe::from_json_str(json).unwrap();
+    assert_eq!(s.id, 99);
+    assert_eq!(s.name, "bob");
+}
+
+#[test]
+fn serialize_deserialize_with_roundtrip() {
+    let orig = WithCustomBoth { id: 7, value: 100 };
+    let json = orig.to_json_string();
+    // id serialized as string
+    assert!(json.contains("\"7\""), "expected quoted 7, got: {json}");
+    let back = WithCustomBoth::from_json_str(&json).unwrap();
+    assert_eq!(orig, back);
+}
+
+#[test]
+fn deserialize_with_propagates_error() {
+    // "not_a_number" cannot be parsed as u64 → custom fn returns Err
+    let json = r#"{"name":"eve","id":"not_a_number"}"#;
+    assert!(WithCustomDe::from_json_str(json).is_err());
+}

@@ -313,7 +313,11 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
     let read_arms: Vec<TokenStream> = active_deserialized.iter().map(|f| {
         let fname = f.fname;
         let idx = f.idx;
-        let read_expr = field_read_expr(f.ty, &de_lt);
+        let read_expr = if let Some(path) = &f.fattrs.deserialize_with {
+            quote! { #path(scanner)? }
+        } else {
+            field_read_expr(f.ty, &de_lt)
+        };
         let hint_slot = hint_slot_map[idx];
         let next_slot = if num_active > 0 { (hint_slot + 1) % num_active } else { 0 };
         quote! {

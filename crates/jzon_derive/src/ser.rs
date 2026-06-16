@@ -158,6 +158,13 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
             fname.to_string()
         };
 
+        // Build the value-writing expression: custom path or default ToJson.
+        let write_value: TokenStream = if let Some(path) = &fattrs.serialize_with {
+            quote! { #path(&self.#fname, w); }
+        } else {
+            quote! { ::jzon::ToJson::json_write(&self.#fname, w); }
+        };
+
         if first {
             first = false;
             if let Some(predicate) = &fattrs.skip_serializing_if {
@@ -171,7 +178,7 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
                     if !#predicate(&self.#fname) {
                         const #const_name: &[u8] = #key_lit_bytes;
                         w.extend_from_slice(#const_name);
-                        ::jzon::ToJson::json_write(&self.#fname, w);
+                        #write_value
                     }
                 });
             } else {
@@ -185,14 +192,16 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
                     {
                         const #const_name: &[u8] = #fused_lit;
                         w.extend_from_slice(#const_name);
-                        ::jzon::ToJson::json_write(&self.#fname, w);
+                        #write_value
                     }
                 });
                 open_brace_fused = true;
-                let key_overhead: usize = json_key.len() + 3;
-                hint_parts.push(quote! {
-                    #key_overhead + ::jzon::ToJson::json_size_hint(&self.#fname)
-                });
+                if fattrs.serialize_with.is_none() {
+                    let key_overhead: usize = json_key.len() + 3;
+                    hint_parts.push(quote! {
+                        #key_overhead + ::jzon::ToJson::json_size_hint(&self.#fname)
+                    });
+                }
             }
         } else {
             if let Some(predicate) = &fattrs.skip_serializing_if {
@@ -206,7 +215,7 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
                     if !#predicate(&self.#fname) {
                         const #const_name: &[u8] = #fused_lit;
                         w.extend_from_slice(#const_name);
-                        ::jzon::ToJson::json_write(&self.#fname, w);
+                        #write_value
                     }
                 });
             } else {
@@ -220,13 +229,15 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
                     {
                         const #const_name: &[u8] = #fused_lit;
                         w.extend_from_slice(#const_name);
-                        ::jzon::ToJson::json_write(&self.#fname, w);
+                        #write_value
                     }
                 });
-                let key_overhead: usize = json_key.len() + 4;
-                hint_parts.push(quote! {
-                    #key_overhead + ::jzon::ToJson::json_size_hint(&self.#fname)
-                });
+                if fattrs.serialize_with.is_none() {
+                    let key_overhead: usize = json_key.len() + 4;
+                    hint_parts.push(quote! {
+                        #key_overhead + ::jzon::ToJson::json_size_hint(&self.#fname)
+                    });
+                }
             }
         }
     }
