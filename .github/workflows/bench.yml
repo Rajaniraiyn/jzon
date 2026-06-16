@@ -6,7 +6,7 @@ name: bench
 #   - replaces <!-- bench:* --> markers in READMEs
 #   - opens or updates a PR on branch bench-results/<ref>
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       bench:
@@ -432,22 +432,21 @@ jobs:
           EXISTING=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number' || true)
 
           DELTA=$(cat /tmp/delta-report.md 2>/dev/null || true)
-          PR_BODY="Auto-generated benchmark results for \`${BASE_REF}\`.
-
-Features: \`${{ inputs.features }}\` · [Run log](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-${DELTA}
-
----
-*Updated automatically by bench.yml. Merge to publish bench numbers.*"
+          {
+            printf 'Auto-generated benchmark results for `%s`.\n\n' "$BASE_REF"
+            printf 'Features: `%s` · [Run log](https://github.com/%s/actions/runs/%s)\n\n' \
+              "${{ inputs.features }}" "${{ github.repository }}" "${{ github.run_id }}"
+            [ -n "$DELTA" ] && printf '%s\n\n' "$DELTA"
+            printf 'Updated automatically by bench.yml. Merge to publish bench numbers.\n'
+          } > /tmp/pr-body.md
 
           if [ -n "$EXISTING" ]; then
-            gh pr edit "$EXISTING" --body "$PR_BODY"
+            gh pr edit "$EXISTING" --body "$(cat /tmp/pr-body.md)"
             echo "Updated PR #${EXISTING}"
           else
             gh pr create \
               --head "$BRANCH" \
               --base "$BASE_REF" \
               --title "bench: update BENCHMARKS.md for ${BASE_REF}" \
-              --body "$PR_BODY"
+              --body "$(cat /tmp/pr-body.md)"
           fi
