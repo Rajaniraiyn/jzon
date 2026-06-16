@@ -290,6 +290,9 @@ impl ToJson for f64 {
     #[inline]
     fn json_write(&self, w: &mut Vec<u8>) {
         if !self.is_finite() { w.extend_from_slice(b"null"); return; }
+        // ECMA-404 / ECMA-262 §24.5.2.4: -0 must serialise as "0".
+        // IEEE 754: -0.0 == 0.0, so this check catches both.
+        if *self == 0.0 { w.extend_from_slice(b"0"); return; }
         #[cfg(feature = "zmij-float-ser")]
         {
             let mut buf = zmij::Buffer::new();

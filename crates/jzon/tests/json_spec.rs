@@ -61,33 +61,25 @@ fn ws_space_before_number() {
 }
 
 // spec: whitespace/invalid-between-tokens
-// KNOWN DEVIATION: jzon's scanner reads the first token (12) and does not
-// enforce that there is no trailing content for number values when parsed
-// via the serde_json::Value path.  The tests are marked #[ignore] to document
-// the spec requirement without causing CI failure.
 #[test]
-#[ignore = "jzon does not reject trailing tokens after a number (known limitation)"]
 fn ws_tab_between_digits_is_invalid() {
     // tc39: 15.12.1.1-g1-1 — TAB between digits creates two tokens → error
     assert!(parse("12\t34").is_err());
 }
 
 #[test]
-#[ignore = "jzon does not reject trailing tokens after a number (known limitation)"]
 fn ws_cr_between_digits_is_invalid() {
     // tc39: 15.12.1.1-g1-2
     assert!(parse("12\r34").is_err());
 }
 
 #[test]
-#[ignore = "jzon does not reject trailing tokens after a number (known limitation)"]
 fn ws_lf_between_digits_is_invalid() {
     // tc39: 15.12.1.1-g1-3
     assert!(parse("12\n34").is_err());
 }
 
 #[test]
-#[ignore = "jzon does not reject trailing tokens after a number (known limitation)"]
 fn ws_space_between_digits_is_invalid() {
     // tc39: 15.12.1.1-g1-4
     assert!(parse("12 34").is_err());
@@ -106,18 +98,14 @@ fn ws_valid_surrounding_all_tokens() {
 }
 
 // spec: whitespace/invalid-vt
-// KNOWN DEVIATION: jzon currently accepts VT and FF as whitespace.
 #[test]
-#[ignore = "jzon treats VT (U+000B) as whitespace; strict spec says it is invalid"]
 fn ws_vt_is_invalid() {
     // tc39: 15.12.1.1-0-2 — U+000B (VT) is NOT JSON whitespace
     assert!(parse("\u{000B}1234").is_err());
 }
 
 // spec: whitespace/invalid-ff
-// KNOWN DEVIATION: jzon currently accepts FF as whitespace.
 #[test]
-#[ignore = "jzon treats FF (U+000C) as whitespace; strict spec says it is invalid"]
 fn ws_ff_is_invalid() {
     // tc39: 15.12.1.1-0-3 — U+000C (FF) is NOT JSON whitespace
     assert!(parse("\u{000C}1234").is_err());
@@ -197,11 +185,7 @@ fn str_empty_string() {
 }
 
 // spec: strings/control-chars-rejected
-// KNOWN DEVIATION: jzon does not validate that JSON string bodies are free
-// of raw U+0000–U+001F control characters (which the JSON spec forbids unless
-// they are \-escaped).  Tests are marked #[ignore] to document the requirement.
 #[test]
-#[ignore = "jzon does not reject raw U+0000-U+0007 inside JSON strings (known limitation)"]
 fn str_control_chars_u0000_to_u0007_rejected() {
     // tc39: 15.12.1.1-g4-1 — U+0000–U+0007 raw in a string are illegal
     let s = "\"\u{0000}\u{0001}\u{0002}\u{0003}\u{0004}\u{0005}\u{0006}\u{0007}\"";
@@ -209,7 +193,6 @@ fn str_control_chars_u0000_to_u0007_rejected() {
 }
 
 #[test]
-#[ignore = "jzon does not reject raw U+0008-U+000F inside JSON strings (known limitation)"]
 fn str_control_chars_u0008_to_u000f_rejected() {
     // tc39: 15.12.1.1-g4-2
     let s = "\"\u{0008}\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{000E}\u{000F}\"";
@@ -217,7 +200,6 @@ fn str_control_chars_u0008_to_u000f_rejected() {
 }
 
 #[test]
-#[ignore = "jzon does not reject raw U+0010-U+001F inside JSON strings (known limitation)"]
 fn str_control_chars_u0010_to_u001f_rejected() {
     // tc39: 15.12.1.1-g4-3 + g4-4
     let s = "\"\u{0010}\u{0011}\u{0012}\u{0013}\u{0014}\u{0015}\u{0016}\u{0017}\
@@ -430,9 +412,7 @@ fn num_leading_plus_rejected() {
 }
 
 // spec: numbers/invalid-leading-zeros
-// KNOWN DEVIATION: jzon accepts numbers with leading zeros such as "01".
 #[test]
-#[ignore = "jzon accepts leading zeros in numbers; strict JSON forbids them"]
 fn num_extra_leading_zero_rejected() {
     assert!(parse("01").is_err());
 }
@@ -444,9 +424,7 @@ fn num_bare_decimal_point_rejected() {
 }
 
 // spec: numbers/invalid-trailing-decimal
-// KNOWN DEVIATION: jzon accepts "1." as a valid number.
 #[test]
-#[ignore = "jzon accepts trailing decimal point in numbers; strict JSON forbids it"]
 fn num_trailing_decimal_rejected() {
     assert!(parse("1.").is_err());
 }
@@ -614,10 +592,7 @@ fn obj_missing_colon_rejected() {
 }
 
 // spec: objects/control-chars-in-key-rejected
-// KNOWN DEVIATION: jzon does not reject raw U+0000–U+001F inside string bodies,
-// so these tests are marked #[ignore].
 #[test]
-#[ignore = "jzon does not reject raw control chars in object keys (known limitation)"]
 fn obj_control_char_in_key_rejected() {
     // tc39: 15.12.2-2-1 — literal U+0000..U+001F in key string body → error
     for cp in ['\u{0000}', '\u{0001}', '\u{0009}', '\u{001F}'] {
@@ -628,7 +603,6 @@ fn obj_control_char_in_key_rejected() {
 
 // spec: objects/control-chars-in-value-rejected
 #[test]
-#[ignore = "jzon does not reject raw control chars in string values (known limitation)"]
 fn obj_control_char_in_string_value_rejected() {
     // tc39: 15.12.2-2-6..10
     for cp in ['\u{0000}', '\u{0001}', '\u{0009}', '\u{001F}'] {
@@ -677,10 +651,7 @@ fn toplevel_whitespace_only_rejected() {
 }
 
 // spec: top-level/trailing-garbage-rejected
-// KNOWN DEVIATION: jzon's scanner reads and returns the first complete value
-// without checking for trailing content, so "1 2" and "{}{}" are accepted.
 #[test]
-#[ignore = "jzon does not reject trailing content after a valid JSON value (known limitation)"]
 fn toplevel_trailing_garbage_rejected() {
     assert!(parse("1 2").is_err());
     assert!(parse("{}{}").is_err());
@@ -728,10 +699,7 @@ fn ser_integer() {
 }
 
 // spec: stringify/negative-zero-serialises-as-zero
-// KNOWN DEVIATION: jzon serialises -0.0 as "-0" rather than "0".
-// The JSON spec (ECMA-404 / ECMA-262 24.5.2.4) requires -0 → "0".
 #[test]
-#[ignore = "jzon serialises -0.0 as \"-0\"; spec requires \"0\" (known limitation)"]
 fn ser_negative_zero() {
     // tc39: value-number-negative-zero.js
     let s = to_string(&(-0.0f64)).unwrap();
