@@ -14,6 +14,9 @@ fn err_token() -> Error { Error::UnexpectedToken }
 /// escape sequences were present in the JSON input.  This lets the serializer
 /// skip the `find_escape` scan entirely — the string is provably escape-free.
 pub enum JsonStr<'de> {
+    /// Zero-copy borrow from the input.  **No longer emitted by [`Scanner::read_str`]**
+    /// (use [`JsonStr::BorrowedNoEsc`] instead); kept for API compatibility.
+    /// `ToJson` will run `write_escaped_str` on this variant.
     Borrowed(&'de str),
     /// Zero-copy borrow whose content is **provably escape-free** (the scanner
     /// hit a closing `"` before any `\\`).  The serializer can bypass the
@@ -199,8 +202,9 @@ impl<'de> Scanner<'de> {
 
     /// Read a JSON string value.
     ///
-    /// Returns `Borrowed(&'de str)` when no escape sequences are present
-    /// (zero allocation), or `Owned(String)` after unescaping.
+    /// Returns [`JsonStr::BorrowedNoEsc`] when no escape sequences are present
+    /// (zero allocation, provably escape-free), or [`JsonStr::Owned`] after
+    /// unescaping.
     pub fn read_str(&mut self) -> Result<JsonStr<'de>, Error> {
         self.skip_whitespace();
         self.expect_byte(b'"')?;

@@ -116,13 +116,6 @@ impl ToJson for String {
     #[inline] fn json_size_hint(&self) -> usize { self.len() + 2 }
 }
 
-// ── JsonStr fast-path ─────────────────────────────────────────────────────────
-//
-// `BorrowedNoEsc` strings are provably escape-free (the scanner confirmed no
-// backslash before the closing quote), so we can skip the `find_escape` scan
-// and write the bytes directly between quotes.  `Borrowed` and `Owned` take
-// the normal `write_escaped_str` path.
-
 impl ToJson for crate::scanner::JsonStr<'_> {
     #[inline]
     fn json_write(&self, w: &mut Vec<u8>) {
