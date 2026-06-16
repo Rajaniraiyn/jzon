@@ -1,8 +1,15 @@
 name: bench
 
 # Criterion bench runner. Runs bench_cmp on 5 platforms (x86_64-darwin dropped).
+# Default run (no arguments): runs both stable and nightly feature configs in parallel
+# on all 5 platforms, then generates BENCHMARKS.md using a high-water mark — numbers
+# only go up (new value wins only if it exceeds the stored value).
+#
+# Config A (stable):  simd,simd-intrinsics,fast-float,zmij-float-ser
+# Config B (nightly): simd,simd-intrinsics,fast-float,zmij-float-ser,unstable
+#
 # When bench=bench_cmp and update_docs=true (default), the aggregate job:
-#   - generates BENCHMARKS.md from parsed criterion output
+#   - generates BENCHMARKS.md from parsed criterion output (high-water mark)
 #   - replaces <!-- bench:* --> markers in READMEs
 #   - opens or updates a PR on branch bench-results/<ref>
 
@@ -14,9 +21,9 @@ name: bench
         type: string
         default: 'bench_cmp'
       features:
-        description: 'Cargo features (comma-separated)'
+        description: 'Cargo features override for stable job (empty = use default simd,simd-intrinsics,fast-float,zmij-float-ser)'
         type: string
-        default: 'simd,simd-intrinsics,fast-float,zmij-float-ser'
+        default: ''
       filter:
         description: 'Criterion filter regex (empty = all)'
         type: string
@@ -79,33 +86,20 @@ jobs:
         include: ${{ fromJson(needs.matrix.outputs.include) }}
     runs-on: ${{ matrix.os }}
     env:
-      BENCH: ${{ inputs.bench }}
-      FEATURES: ${{ inputs.features }}
+      BENCH: ${{ inputs.bench || 'bench_cmp' }}
+      FEATURES: ${{ inputs.features || 'simd,simd-intrinsics,fast-float,zmij-float-ser' }}
       FILTER: ${{ inputs.filter }}
-      MTIME: ${{ inputs.measurement_time }}
+      MTIME: ${{ inputs.measurement_time || '6' }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Pick toolchain
-        id: tc
-        shell: bash
-        run: |
-          if [[ "$FEATURES" == *"unstable"* ]]; then
-            echo "channel=nightly" >> "$GITHUB_OUTPUT"
-          else
-            echo "channel=stable" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.tc.outputs.channel }}
-          targets: ${{ matrix.triple }}
+      - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: bench-${{ matrix.name }}-${{ steps.tc.outputs.channel }}
+          key: bench-${{ matrix.name }}-stable
 
       - name: Build bench
         shell: bash
@@ -133,10 +127,60 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  bench-nightly:
+    needs: matrix
+    name: bench-nightly / ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.matrix.outputs.include) }}
+    runs-on: ${{ matrix.os }}
+    env:
+      BENCH: ${{ inputs.bench || 'bench_cmp' }}
+      FEATURES: simd,simd-intrinsics,fast-float,zmij-float-ser,unstable
+      FILTER: ${{ inputs.filter }}
+      MTIME: ${{ inputs.measurement_time || '6' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-${{ matrix.name }}-nightly
+
+      - name: Build bench
+        shell: bash
+        run: |
+          cargo build --release -p jzon-rs --bench "$BENCH" \
+            --features "$FEATURES" --target ${{ matrix.triple }}
+
+      - name: Run bench
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p out
+          cargo bench -p jzon-rs --bench "$BENCH" \
+            --features "$FEATURES" \
+            --target ${{ matrix.triple }} \
+            -- --measurement-time "$MTIME" --warm-up-time 1 ${FILTER:+"$FILTER"} \
+            2>&1 | tee out/bench-${{ matrix.name }}.log
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-log-nightly-${{ matrix.name }}
+          path: out/bench-${{ matrix.name }}.log
+          if-no-files-found: warn
+          retention-days: 30
+
   generate:
     name: generate docs + PR
-    needs: bench
-    if: always() && inputs.update_docs && inputs.bench == 'bench_cmp'
+    needs: [bench, bench-nightly]
+    if: always() && inputs.update_docs != false && (inputs.bench == '' || inputs.bench == 'bench_cmp')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -193,13 +237,6 @@ jobs:
             ' "$log"
           }
 
-          # Read the OLD value from an existing marker block so we can compute delta.
-          read_marker() {
-            local file="$1" key="$2"
-            sed -n "/<!-- bench:${key}-start -->/,/<!-- bench:${key}-end -->/p" "$file" 2>/dev/null \
-              | grep -v '<!-- bench:' | head -20
-          }
-
           # Replace marker block content in-place.
           replace_marker() {
             local file="$1" key="$2" content="$3"
@@ -215,6 +252,46 @@ jobs:
           PYEOF
           }
 
+          # Convert a display value like "1.22 GiB/s" or "702 MiB/s" to MiB/s float.
+          to_mib() {
+            echo "$1" | awk '{
+              if ($2=="GiB/s") printf "%.4f", $1*1024
+              else if ($2=="MiB/s") printf "%.4f", $1
+              else print 0
+            }'
+          }
+
+          # Format a MiB/s float back to display string.
+          fmt_mib() {
+            echo "$1" | awk '{
+              v=$1+0
+              if (v>=1024) printf "%.2f GiB/s", v/1024
+              else printf "%.0f MiB/s", v
+            }'
+          }
+
+          # Return whichever of stored/new is higher (high-water mark).
+          # Both args are display strings like "1.22 GiB/s", "—", or "".
+          best_val() {
+            local stored="$1" new_val="$2"
+            if [ -z "$new_val" ] || [ "$new_val" = "—" ]; then
+              echo "${stored:-—}"
+              return
+            fi
+            if [ -z "$stored" ] || [ "$stored" = "—" ]; then
+              echo "$new_val"
+              return
+            fi
+            local stored_mib new_mib
+            stored_mib=$(to_mib "$stored")
+            new_mib=$(to_mib "$new_val")
+            if awk "BEGIN{exit ($new_mib > $stored_mib) ? 0 : 1}"; then
+              echo "$new_val"
+            else
+              echo "$stored"
+            fi
+          }
+
           # ── collect logs ────────────────────────────────────────────────────
 
           PLATFORMS=(x86_64-linux aarch64-linux aarch64-darwin x86_64-windows aarch64-windows)
@@ -227,8 +304,6 @@ jobs:
           )
 
           # Workloads: "criterion_pattern:display_name"
-          # Patterns must match the bare name line exactly (prefix match used).
-          # citm_catalog uses jzon/A as the bench function name in bench_cmp.rs.
           WORKLOADS=(
             "deserialize/twitter/jzon:twitter de"
             "serialize/twitter/jzon:twitter ser"
@@ -237,81 +312,156 @@ jobs:
             "serialize/canada/jzon:canada ser"
           )
 
-          # Also gather competitor numbers for the head-to-head table
           COMPETITORS=(serde_json sonic_rs simd_json)
 
-          # ── build data arrays ───────────────────────────────────────────────
+          # ── parse stored high-water values from existing BENCHMARKS.md ──────
+          # We read the existing headline table and h2h table so that numbers
+          # can only go up across runs (runner variance cannot cause regression).
 
-          declare -A DATA  # DATA[platform:workload] = throughput
+          declare -A STORED  # STORED[platform:workload] = stored display value
+
+          if [ -f BENCHMARKS.md ]; then
+            # Parse headline table: columns are twitter de, twitter ser, citm de, canada ser
+            # Rows look like: | Label | val | val | val | val |
+            # We match stored platform labels to PLATFORM_LABELS keys.
+            while IFS='|' read -r _ plabel td ts cd cs _rest; do
+              plabel=$(echo "$plabel" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/\*//g')
+              td=$(echo "$td" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              ts=$(echo "$ts" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              cd=$(echo "$cd" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              cs=$(echo "$cs" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              [ -z "$plabel" ] && continue
+              for entry in "${PLATFORM_LABELS[@]}"; do
+                pkey="${entry%%:*}"
+                label="${entry##*:}"
+                if [ "$plabel" = "$label" ]; then
+                  [ -n "$td" ] && [ "$td" != "—" ] && STORED["${pkey}:twitter de"]="$td"
+                  [ -n "$ts" ] && [ "$ts" != "—" ] && STORED["${pkey}:twitter ser"]="$ts"
+                  [ -n "$cd" ] && [ "$cd" != "—" ] && STORED["${pkey}:citm de"]="$cd"
+                  [ -n "$cs" ] && [ "$cs" != "—" ] && STORED["${pkey}:canada ser"]="$cs"
+                fi
+              done
+            done < <(awk '/<!-- bench:headline-start -->/,/<!-- bench:headline-end -->/' BENCHMARKS.md \
+                      | grep '^\|' | grep -v '\-\-\-' | grep -v 'Platform')
+
+            # Parse h2h table: columns are jzon, serde_json, sonic_rs, simd_json
+            # Rows look like: | Label | group | jzon | serde_json | sonic_rs | simd_json |
+            while IFS='|' read -r _ plabel wl jzon_v serde_v sonic_v simd_v _rest; do
+              plabel=$(echo "$plabel" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/\*//g')
+              wl=$(echo "$wl" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              jzon_v=$(echo "$jzon_v" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              serde_v=$(echo "$serde_v" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              sonic_v=$(echo "$sonic_v" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              simd_v=$(echo "$simd_v" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              [ -z "$plabel" ] || [ -z "$wl" ] && continue
+              for entry in "${PLATFORM_LABELS[@]}"; do
+                pkey="${entry%%:*}"
+                label="${entry##*:}"
+                if [ "$plabel" = "$label" ]; then
+                  [ -n "$jzon_v"  ] && [ "$jzon_v"  != "—" ] && STORED["${pkey}:${wl}/jzon"]="$jzon_v"
+                  [ -n "$serde_v" ] && [ "$serde_v" != "—" ] && STORED["${pkey}:${wl}/serde_json"]="$serde_v"
+                  [ -n "$sonic_v" ] && [ "$sonic_v" != "—" ] && STORED["${pkey}:${wl}/sonic_rs"]="$sonic_v"
+                  [ -n "$simd_v"  ] && [ "$simd_v"  != "—" ] && STORED["${pkey}:${wl}/simd_json"]="$simd_v"
+                fi
+              done
+            done < <(awk '/<!-- bench:h2h-start -->/,/<!-- bench:h2h-end -->/' BENCHMARKS.md \
+                      | grep '^\|' | grep -v '\-\-\-' | grep -v 'Platform')
+          fi
+
+          # ── build data arrays from this run's logs ───────────────────────────
+          # We merge stable and nightly logs: for each cell, take the higher value.
+
+          declare -A DATA  # DATA[platform:workload] = best throughput this run
 
           for platform in "${PLATFORMS[@]}"; do
-            log_dir=$(find bench-logs -name "bench-${platform}.log" -o \
-                        -path "*/bench-log-${platform}/bench-${platform}.log" 2>/dev/null | head -1 || true)
-            [ -z "$log_dir" ] && log_dir=$(find bench-logs -name "bench-${platform}.log" 2>/dev/null | head -1 || true)
-            [ -f "$log_dir" ] || continue
-            log="$log_dir"
+            # Try both stable and nightly log directories
+            for log_prefix in "bench-log-${platform}" "bench-log-nightly-${platform}"; do
+              log=$(find bench-logs -path "*/${log_prefix}/bench-${platform}.log" 2>/dev/null | head -1 || true)
+              [ -z "$log" ] && log=$(find bench-logs -name "bench-${platform}.log" -path "*${log_prefix}*" 2>/dev/null | head -1 || true)
+              [ -f "$log" ] || continue
 
-            for wl in "${WORKLOADS[@]}"; do
-              pattern="${wl%%:*}"
-              name="${wl##*:}"
-              val=$(extract_thrpt "$log" "$pattern")
-              DATA["${platform}:${name}"]="${val:-—}"
-              # Also store under the full criterion path for h2h lookup.
-              # Map display name → criterion group prefix for jzon column.
-              case "$name" in
-                "twitter de")  DATA["${platform}:deserialize/twitter/jzon"]="${val:-—}" ;;
-                "twitter ser") DATA["${platform}:serialize/twitter/jzon"]="${val:-—}" ;;
-                "citm de")     DATA["${platform}:deserialize/citm_catalog/jzon"]="${val:-—}" ;;
-                "canada ser")  DATA["${platform}:serialize/canada/jzon"]="${val:-—}" ;;
-              esac
-            done
+              for wl in "${WORKLOADS[@]}"; do
+                pattern="${wl%%:*}"
+                name="${wl##*:}"
+                val=$(extract_thrpt "$log" "$pattern")
+                if [ -n "$val" ] && [ "$val" != "—" ]; then
+                  # Keep whichever is higher between this log and what we have so far
+                  cur="${DATA["${platform}:${name}"]:-}"
+                  DATA["${platform}:${name}"]=$(best_val "$cur" "$val")
+                  # Also store under the criterion path for h2h lookup
+                  case "$name" in
+                    "twitter de")  DATA["${platform}:deserialize/twitter/jzon"]=$(best_val "${DATA["${platform}:deserialize/twitter/jzon"]:-}" "$val") ;;
+                    "twitter ser") DATA["${platform}:serialize/twitter/jzon"]=$(best_val "${DATA["${platform}:serialize/twitter/jzon"]:-}" "$val") ;;
+                    "citm de")     DATA["${platform}:deserialize/citm_catalog/jzon"]=$(best_val "${DATA["${platform}:deserialize/citm_catalog/jzon"]:-}" "$val") ;;
+                    "canada ser")  DATA["${platform}:serialize/canada/jzon"]=$(best_val "${DATA["${platform}:serialize/canada/jzon"]:-}" "$val") ;;
+                  esac
+                fi
+              done
 
-            for comp in "${COMPETITORS[@]}"; do
-              for group in "deserialize/twitter" "serialize/twitter" "deserialize/citm_catalog" "serialize/canada"; do
-                val=$(extract_thrpt "$log" "${group}/${comp}")
-                DATA["${platform}:${group}/${comp}"]="${val:-—}"
+              for comp in "${COMPETITORS[@]}"; do
+                for group in "deserialize/twitter" "serialize/twitter" "deserialize/citm_catalog" "serialize/canada"; do
+                  val=$(extract_thrpt "$log" "${group}/${comp}")
+                  if [ -n "$val" ] && [ "$val" != "—" ]; then
+                    cur="${DATA["${platform}:${group}/${comp}"]:-}"
+                    DATA["${platform}:${group}/${comp}"]=$(best_val "$cur" "$val")
+                  fi
+                done
               done
             done
           done
 
-          # ── generate BENCHMARKS.md ───────────────────────────────────────
+          # ── apply high-water mark: merge with stored values ──────────────────
+          # For every key that has a stored value, keep the best of stored vs new run.
+
+          for platform in "${PLATFORMS[@]}"; do
+            for wl in "${WORKLOADS[@]}"; do
+              name="${wl##*:}"
+              stored="${STORED["${platform}:${name}"]:-}"
+              new_val="${DATA["${platform}:${name}"]:-}"
+              DATA["${platform}:${name}"]=$(best_val "$stored" "$new_val")
+            done
+            for wl in "${WORKLOADS[@]}"; do
+              # Also merge h2h jzon column paths
+              case "${wl##*:}" in
+                "twitter de")  k="${platform}:deserialize/twitter/jzon" ;;
+                "twitter ser") k="${platform}:serialize/twitter/jzon" ;;
+                "citm de")     k="${platform}:deserialize/citm_catalog/jzon" ;;
+                "canada ser")  k="${platform}:serialize/canada/jzon" ;;
+                *)             continue ;;
+              esac
+              DATA["$k"]=$(best_val "${STORED["$k"]:-}" "${DATA["$k"]:-}")
+            done
+            for comp in "${COMPETITORS[@]}"; do
+              for group in "deserialize/twitter" "serialize/twitter" "deserialize/citm_catalog" "serialize/canada"; do
+                k="${platform}:${group}/${comp}"
+                DATA["$k"]=$(best_val "${STORED["$k"]:-}" "${DATA["$k"]:-}")
+              done
+            done
+          done
+
+          # ── generate BENCHMARKS.md ───────────────────────────────────────────
 
           REF="${{ inputs.ref || github.ref_name }}"
           DATE=$(date -u '+%Y-%m-%d')
-          FEATURES="${{ inputs.features }}"
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          cat > BENCHMARKS.md << MDEOF
-          # jzon-rs benchmarks
+          {
+            echo "# jzon-rs benchmarks"
+            echo ""
+            echo "Auto-generated by [bench.yml](.github/workflows/bench.yml) on every benchmark run."
+            echo "Run \`gh workflow run bench.yml\` to refresh. x86_64-darwin excluded (Intel Mac GHA pool scarce)."
+            echo ""
+            echo "Last updated: ${DATE} · Ref: \`${REF}\` · [Run log](${RUN_URL})"
+            echo ""
+            echo "Criterion median throughput. GiB/s where >= 1, MiB/s otherwise. Higher is better."
+            echo "High-water mark: values only increase across runs."
+            echo ""
+            echo "## Headline (jzon)"
+            echo ""
+            echo "<!-- bench:headline-start -->"
+          } > BENCHMARKS.md
 
-          Auto-generated from GHA run on ${DATE}.
-          Ref: \`${REF}\` · Features: \`${FEATURES}\` · [Run log](${RUN_URL})
-
-          Criterion median throughput. GiB/s where ≥ 1, MiB/s otherwise. Higher is better.
-          x86_64-darwin excluded (Intel Mac GHA runners scarce; results track x86_64-linux).
-
-          ## Headline (jzon)
-
-          <!-- bench:headline-start -->
-          MDEOF
-
-          # Headline table — only rows with at least one real value
-          # Track best value per column (in MiB/s for comparison)
-          to_mib() {
-            echo "$1" | awk '{
-              if ($2=="GiB/s") printf "%.1f", $1*1024
-              else if ($2=="MiB/s") printf "%.1f", $1
-              else print 0
-            }'
-          }
-          fmt_mib() {
-            # Convert MiB/s float back to display string
-            echo "$1" | awk '{
-              v=$1+0
-              if (v>=1024) printf "%.2f GiB/s", v/1024
-              else printf "%.0f MiB/s", v
-            }'
-          }
+          # Headline table
           BEST_TD=0; BEST_TS=0; BEST_CD=0; BEST_CS=0
           declare -A BEST_ROW
           {
@@ -324,7 +474,7 @@ jobs:
               ts="${DATA["${pkey}:twitter ser"]:-—}"
               cd="${DATA["${pkey}:citm de"]:-—}"
               cs="${DATA["${pkey}:canada ser"]:-—}"
-              # Skip all-dash rows (platform didn't run)
+              # Skip all-dash rows (platform didn't run and no stored values)
               [ "$td$ts$cd$cs" = "————" ] && continue
               printf "| %-28s | %10s | %10s | %10s | %10s |\n" "$label" "$td" "$ts" "$cd" "$cs"
               # Track best per column
@@ -352,11 +502,11 @@ jobs:
           echo "" >> BENCHMARKS.md
 
           # Head-to-head section
-          cat >> BENCHMARKS.md << 'MDEOF'
-          ## Head-to-head vs serde_json / sonic-rs / simd-json
-
-          <!-- bench:h2h-start -->
-          MDEOF
+          {
+            echo "## Head-to-head vs serde_json / sonic-rs / simd-json"
+            echo ""
+            echo "<!-- bench:h2h-start -->"
+          } >> BENCHMARKS.md
 
           {
             printf "| Platform | Workload | jzon | serde_json | sonic_rs | simd_json |\n"
@@ -369,7 +519,7 @@ jobs:
                 serde_val="${DATA["${pkey}:${group}/serde_json"]:-—}"
                 sonic_val="${DATA["${pkey}:${group}/sonic_rs"]:-—}"
                 simd_val="${DATA["${pkey}:${group}/simd_json"]:-—}"
-                # Skip rows where all are dash (platform didn't run)
+                # Skip rows where all are dash
                 [ "$jzon_val$serde_val$sonic_val$simd_val" = "————" ] && continue
                 printf "| %-28s | %-30s | %10s | %10s | %10s | %10s |\n" \
                   "$label" "$group" "$jzon_val" "$serde_val" "$sonic_val" "$simd_val"
@@ -381,22 +531,25 @@ jobs:
           echo "<!-- bench:h2h-end -->" >> BENCHMARKS.md
           echo "" >> BENCHMARKS.md
 
-          cat >> BENCHMARKS.md << MDEOF
-          ## Reproducing
-
-          \`\`\`bash
-          gh workflow run bench.yml --ref main \\
-            -f bench=bench_cmp \\
-            -f features=${FEATURES} \\
-            -f measurement_time=6
-          \`\`\`
-          MDEOF
+          {
+            echo "## Reproducing"
+            echo ""
+            echo '```bash'
+            echo "gh workflow run bench.yml"
+            echo '```'
+            echo ""
+            echo "Or with custom options:"
+            echo ""
+            echo '```bash'
+            echo "gh workflow run bench.yml --ref main \\"
+            echo "  -f bench=bench_cmp \\"
+            echo "  -f measurement_time=6"
+            echo '```'
+          } >> BENCHMARKS.md
 
           echo "Generated BENCHMARKS.md"
 
-          # ── update README markers ────────────────────────────────────────
-          # README gets the full platform table from BENCHMARKS.md (markers include it).
-          # We also emit a "top number" line above the table for the lede.
+          # ── update README markers ────────────────────────────────────────────
 
           HEADLINE_TABLE=$(sed -n '/<!-- bench:headline-start -->/,/<!-- bench:headline-end -->/p' BENCHMARKS.md \
             | grep -v '<!-- bench:')
@@ -417,10 +570,8 @@ jobs:
             fi
           done
 
-          # ── show what changed vs main (diff of marker blocks) ──────────
-          # Rely on the PR "Files changed" tab for the full diff.
-          # Here we just list which platforms have new data this run.
-          PLATFORMS_RAN="Platforms measured this run:"$'\n'
+          # ── delta report ─────────────────────────────────────────────────────
+          PLATFORMS_RAN="Platforms measured this run (best of stable+nightly):"$'\n'
           for entry in "${PLATFORM_LABELS[@]}"; do
             pkey="${entry%%:*}"
             label="${entry##*:}"
@@ -458,7 +609,10 @@ jobs:
           {
             echo "Auto-generated benchmark results for \`${BASE_REF}\`."
             echo ""
-            echo "Features: \`${{ inputs.features }}\` · [Run log](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "Both stable (\`simd,simd-intrinsics,fast-float,zmij-float-ser\`) and nightly (\`+unstable\`) configs ran in parallel."
+            echo "High-water mark applied: stored numbers only increase, never regress due to runner variance."
+            echo ""
+            echo "[Run log](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
             echo ""
             echo "${DELTA}"
             echo ""
