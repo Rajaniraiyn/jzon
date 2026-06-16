@@ -1127,14 +1127,12 @@ fn borrow_attr_is_noop_jzon_zercopies_natively() {
 
 // ── #[rjson(serialize_with)] / #[rjson(deserialize_with)] ────────────────────
 
-/// Custom serializer: writes a u64 as a JSON string (e.g. 42 → `"42"`).
 fn serialize_u64_as_string(v: &u64, w: &mut Vec<u8>) {
     w.push(b'"');
     v.json_write(w);
     w.push(b'"');
 }
 
-/// Custom deserializer: reads a JSON string and parses it as u64.
 fn deserialize_u64_from_string(scanner: &mut jzon::Scanner) -> Result<u64, jzon::Error> {
     let js = scanner.read_str()?;
     js.as_str().parse::<u64>().map_err(|_| jzon::Error::UnexpectedToken)
@@ -1187,4 +1185,11 @@ fn serialize_deserialize_with_roundtrip() {
     assert!(json.contains("\"7\""), "expected quoted 7, got: {json}");
     let back = WithCustomBoth::from_json_str(&json).unwrap();
     assert_eq!(orig, back);
+}
+
+#[test]
+fn deserialize_with_propagates_error() {
+    // "not_a_number" cannot be parsed as u64 → custom fn returns Err
+    let json = r#"{"name":"eve","id":"not_a_number"}"#;
+    assert!(WithCustomDe::from_json_str(json).is_err());
 }
