@@ -92,13 +92,15 @@ Up to **3.6× serde_json**, **2.4× sonic-rs**, **7.8× simd-json** on
 real-world workloads. Top number: **53.6 GiB/s** twitter serialize
 on Apple Silicon.
 
+<!-- bench:headline-start -->
 | Platform | twitter de | twitter ser | citm de | canada ser |
 |---|--:|--:|--:|--:|
-| Apple Silicon            | 1.35 GiB/s | **53.6 GiB/s** | 2.45 GiB/s | 880 MiB/s |
-| x86_64 Linux (AVX2)      | 1.22 GiB/s | 47.5 GiB/s | 2.02 GiB/s | 702 MiB/s |
-| x86_64 Windows (AVX2)    | 1.18 GiB/s | 41.4 GiB/s | 2.01 GiB/s | 453 MiB/s |
-| aarch64 Linux (Graviton) | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
-| Windows on ARM           | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
+| Apple Silicon (macOS)      | 1.35 GiB/s | **53.6 GiB/s** | 2.45 GiB/s | 880 MiB/s |
+| x86_64 Linux (AVX2)        | 1.22 GiB/s | 47.5 GiB/s | 2.02 GiB/s | 702 MiB/s |
+| x86_64 Windows (AVX2)      | 1.18 GiB/s | 41.4 GiB/s | 2.01 GiB/s | 453 MiB/s |
+| aarch64 Linux (Graviton)   | 1.27 GiB/s | 39.5 GiB/s | 2.36 GiB/s | 916 MiB/s |
+| Windows on ARM              | 1.15 GiB/s | 38.4 GiB/s | 2.33 GiB/s | 642 MiB/s |
+<!-- bench:headline-end -->
 
 Full matrix + competitor comparison + workloads where we lose:
 [`BENCHMARKS.md`](./BENCHMARKS.md).

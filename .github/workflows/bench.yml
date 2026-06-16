@@ -1,36 +1,42 @@
 name: bench
 
-# Generic criterion bench runner across target triples.
-# Trigger manually from the Actions tab; pick any bench target via input.
-# Results land in the run summary and as criterion HTML artifacts.
+# Criterion bench runner. Runs bench_cmp on 5 platforms (x86_64-darwin dropped).
+# When bench=bench_cmp and update_docs=true (default), the aggregate job:
+#   - generates BENCHMARKS.md from parsed criterion output
+#   - replaces <!-- bench:* --> markers in READMEs
+#   - opens or updates a PR on branch bench-results/<ref>
 
 on:
   workflow_dispatch:
     inputs:
       bench:
-        description: 'Criterion bench target name (e.g. bench_simd, bench_cmp)'
+        description: 'Criterion bench target (bench_cmp or bench_simd)'
         type: string
-        default: 'bench_simd'
+        default: 'bench_cmp'
       features:
-        description: 'Cargo feature combo (cs-list; nightly used if "unstable" appears)'
+        description: 'Cargo features (comma-separated)'
         type: string
-        default: 'simd,simd-intrinsics'
+        default: 'simd,simd-intrinsics,fast-float'
       filter:
-        description: 'Criterion filter (regex, empty = all)'
+        description: 'Criterion filter regex (empty = all)'
         type: string
         default: ''
       ref:
-        description: 'Git ref to benchmark (branch/tag/sha; empty = workflow ref)'
+        description: 'Git ref to benchmark (empty = workflow ref)'
         type: string
         default: ''
       runners:
-        description: 'Comma-separated subset of {x86_64-linux,aarch64-linux,aarch64-darwin,x86_64-darwin,x86_64-windows,aarch64-windows} (empty = all)'
+        description: 'Comma-separated subset of {x86_64-linux,aarch64-linux,aarch64-darwin,x86_64-windows,aarch64-windows} (empty = all)'
         type: string
         default: ''
       measurement_time:
         description: 'Per-bench measurement seconds'
         type: string
-        default: '5'
+        default: '6'
+      update_docs:
+        description: 'Generate BENCHMARKS.md + README markers + open PR'
+        type: boolean
+        default: true
 
 jobs:
   matrix:
@@ -42,13 +48,14 @@ jobs:
       - id: build
         shell: bash
         run: |
+          # x86_64-darwin (macos-13 Intel) deliberately excluded — scarce GHA pool,
+          # slow queue, results nearly identical to x86_64-linux AVX2.
           ALL='[
-            {"name":"x86_64-linux","os":"ubuntu-latest","triple":"x86_64-unknown-linux-gnu"},
-            {"name":"aarch64-linux","os":"ubuntu-24.04-arm","triple":"aarch64-unknown-linux-gnu"},
-            {"name":"aarch64-darwin","os":"macos-latest","triple":"aarch64-apple-darwin"},
-            {"name":"x86_64-darwin","os":"macos-13","triple":"x86_64-apple-darwin"},
-            {"name":"x86_64-windows","os":"windows-latest","triple":"x86_64-pc-windows-msvc"},
-            {"name":"aarch64-windows","os":"windows-11-arm","triple":"aarch64-pc-windows-msvc"}
+            {"name":"x86_64-linux",    "os":"ubuntu-latest",    "triple":"x86_64-unknown-linux-gnu"},
+            {"name":"aarch64-linux",   "os":"ubuntu-24.04-arm", "triple":"aarch64-unknown-linux-gnu"},
+            {"name":"aarch64-darwin",  "os":"macos-latest",     "triple":"aarch64-apple-darwin"},
+            {"name":"x86_64-windows",  "os":"windows-latest",   "triple":"x86_64-pc-windows-msvc"},
+            {"name":"aarch64-windows", "os":"windows-11-arm",   "triple":"aarch64-pc-windows-msvc"}
           ]'
           REQ='${{ inputs.runners }}'
           if [ -z "$REQ" ]; then
@@ -92,30 +99,17 @@ jobs:
           toolchain: ${{ steps.tc.outputs.channel }}
           targets: ${{ matrix.triple }}
 
-      - name: Show CPU info
-        shell: bash
-        run: |
-          echo "### CPU — ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ runner.os }}" == "Linux" ]]; then
-            lscpu | grep -E 'Model name|Architecture|Flags|CPU max MHz' | head -10 >> "$GITHUB_STEP_SUMMARY" || true
-          else
-            sysctl -n machdep.cpu.brand_string >> "$GITHUB_STEP_SUMMARY" || true
-            sysctl -n hw.ncpu >> "$GITHUB_STEP_SUMMARY" || true
-          fi
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-
       - uses: Swatinem/rust-cache@v2
         with:
           key: bench-${{ matrix.name }}-${{ steps.tc.outputs.channel }}
 
-      - name: Build bench ($BENCH)
+      - name: Build bench
         shell: bash
         run: |
           cargo build --release -p jzon-rs --bench "$BENCH" \
             --features "$FEATURES" --target ${{ matrix.triple }}
 
-      - name: Run bench ($BENCH)
+      - name: Run bench
         shell: bash
         run: |
           set -o pipefail
@@ -126,69 +120,326 @@ jobs:
             -- --measurement-time "$MTIME" --warm-up-time 1 ${FILTER:+"$FILTER"} \
             2>&1 | tee out/bench-${{ matrix.name }}.log
 
-      - name: Extract summary table
-        shell: bash
-        run: |
-          LOG="out/bench-${{ matrix.name }}.log"
-          echo "## ${BENCH} — ${{ matrix.name }} (\`${FEATURES}\`)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Bench | Time | Throughput |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          # Criterion text output: "name<spaces>time:   [low mid high]" then a
-          # "thrpt:  [...]" line. Pull both into one row.
-          awk '
-            # Bench-name line: starts at column 0, contains /, has no colon-space pair
-            /^[A-Za-z_][A-Za-z0-9_]*\// && !/time:/ && !/thrpt:/ { name=$0; next }
-            /^[[:space:]]*time:/ {
-              # strip leading "time:" and brackets
-              gsub(/.*\[/, "", $0); gsub(/\].*/, "", $0)
-              t=$0
-              # peek next line for throughput
-              if ((getline nl) > 0 && nl ~ /thrpt:/) {
-                gsub(/.*\[/, "", nl); gsub(/\].*/, "", nl)
-                printf "| `%s` | %s | %s |\n", name, t, nl
-              } else {
-                printf "| `%s` | %s | — |\n", name, t
-              }
-            }
-          ' "$LOG" >> "$GITHUB_STEP_SUMMARY" || true
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "<details><summary>Full bench log</summary>" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          tail -c 60000 "$LOG" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "</details>" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload criterion HTML
+      - name: Upload log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: criterion-${{ matrix.name }}
-          path: |
-            target/${{ matrix.triple }}/criterion/
-            out/bench-${{ matrix.name }}.log
+          name: bench-log-${{ matrix.name }}
+          path: out/bench-${{ matrix.name }}.log
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
-  aggregate:
+  generate:
+    name: generate docs + PR
     needs: bench
-    if: always()
+    if: always() && inputs.update_docs && inputs.bench == 'bench_cmp'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-      - name: Roll-up summary
+          pattern: bench-log-*
+          path: bench-logs
+          merge-multiple: false
+
+      - name: Parse logs + generate BENCHMARKS.md + update markers
         shell: bash
         run: |
-          echo "## Roll-up across runners" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          for f in artifacts/*/bench-*.log; do
-            [ -f "$f" ] || continue
-            triple=$(basename "$f" .log | sed 's/^bench-//')
-            echo "### $triple" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            grep -E '^[A-Za-z_][A-Za-z0-9_]*/|time:' "$f" | head -300 >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+
+          # ── helpers ─────────────────────────────────────────────────────────
+
+          # Extract median throughput for a given "group/bench" from a log file.
+          # Outputs e.g. "1.22 GiB/s" or "702 MiB/s" or "" if not found.
+          extract_thrpt() {
+            local log="$1" pattern="$2"
+            awk -v pat="$pattern" '
+              $0 ~ pat { found=1; next }
+              found && /thrpt:/ {
+                # line: "  thrpt:  [low mid high unit]"
+                # extract the middle token between the second and third spaces after "["
+                match($0, /\[([0-9.]+) ([0-9.]+) ([0-9.]+) ([A-Za-z/]+)/, a)
+                if (a[0]) {
+                  val  = a[2]+0   # median
+                  unit = a[4]
+                  # normalise to GiB/s or MiB/s
+                  if (unit == "GiB/s") {
+                    printf "%.2f GiB/s", val
+                  } else if (unit == "MiB/s") {
+                    if (val >= 1000) printf "%.2f GiB/s", val/1024
+                    else             printf "%.0f MiB/s", val
+                  } else {
+                    printf "%.2f %s", val, unit
+                  }
+                }
+                found=0; next
+              }
+              found && /^[A-Za-z]/ { found=0 }
+            ' "$log"
+          }
+
+          # Read the OLD value from an existing marker block so we can compute delta.
+          read_marker() {
+            local file="$1" key="$2"
+            sed -n "/<!-- bench:${key}-start -->/,/<!-- bench:${key}-end -->/p" "$file" 2>/dev/null \
+              | grep -v '<!-- bench:' | head -20
+          }
+
+          # Replace marker block content in-place.
+          replace_marker() {
+            local file="$1" key="$2" content="$3"
+            python3 - "$file" "$key" "$content" <<'PYEOF'
+          import sys, re, pathlib
+          path, key, content = sys.argv[1], sys.argv[2], sys.argv[3]
+          text = pathlib.Path(path).read_text()
+          pattern = rf'<!-- bench:{re.escape(key)}-start -->.*?<!-- bench:{re.escape(key)}-end -->'
+          replacement = f'<!-- bench:{key}-start -->\n{content}\n<!-- bench:{key}-end -->'
+          new_text, n = re.subn(pattern, replacement, text, flags=re.DOTALL)
+          if n:
+            pathlib.Path(path).write_text(new_text)
+          PYEOF
+          }
+
+          # ── collect logs ────────────────────────────────────────────────────
+
+          PLATFORMS=(x86_64-linux aarch64-linux aarch64-darwin x86_64-windows aarch64-windows)
+          PLATFORM_LABELS=(
+            "x86_64-linux:x86_64 Linux (AVX2)"
+            "aarch64-linux:aarch64 Linux (Graviton)"
+            "aarch64-darwin:Apple Silicon (macOS)"
+            "x86_64-windows:x86_64 Windows (AVX2)"
+            "aarch64-windows:Windows on ARM"
+          )
+
+          # Workloads: "criterion_group_pattern|display_name"
+          WORKLOADS=(
+            "deserialize/twitter/jzon:twitter de"
+            "serialize/twitter/jzon:twitter ser"
+            "deserialize/citm_catalog/jzon:citm_catalog de"
+            "deserialize/canada/jzon:canada de"
+            "serialize/canada/jzon:canada ser"
+            "deserialize/citm_catalog/jzon:citm de"
+          )
+
+          # Also gather competitor numbers for the head-to-head table
+          COMPETITORS=(serde_json sonic_rs simd_json)
+
+          # ── build data arrays ───────────────────────────────────────────────
+
+          declare -A DATA  # DATA[platform:workload] = throughput
+
+          for platform in "${PLATFORMS[@]}"; do
+            log_dir=$(find bench-logs -name "bench-${platform}.log" -o \
+                        -path "*/bench-log-${platform}/bench-${platform}.log" 2>/dev/null | head -1 || true)
+            [ -z "$log_dir" ] && log_dir=$(find bench-logs -name "bench-${platform}.log" 2>/dev/null | head -1 || true)
+            [ -f "$log_dir" ] || continue
+            log="$log_dir"
+
+            for wl in "${WORKLOADS[@]}"; do
+              pattern="${wl%%:*}"
+              name="${wl##*:}"
+              val=$(extract_thrpt "$log" "$pattern")
+              DATA["${platform}:${name}"]="${val:-—}"
+            done
+
+            for comp in "${COMPETITORS[@]}"; do
+              for group in "deserialize/twitter" "serialize/twitter" "deserialize/citm_catalog" "serialize/canada"; do
+                val=$(extract_thrpt "$log" "${group}/${comp}")
+                DATA["${platform}:${group}/${comp}"]="${val:-—}"
+              done
+            done
           done
+
+          # ── generate BENCHMARKS.md ───────────────────────────────────────
+
+          REF="${{ inputs.ref || github.ref_name }}"
+          DATE=$(date -u '+%Y-%m-%d')
+          FEATURES="${{ inputs.features }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          cat > BENCHMARKS.md << MDEOF
+          # jzon-rs benchmarks
+
+          Auto-generated from GHA run on ${DATE}.
+          Ref: \`${REF}\` · Features: \`${FEATURES}\` · [Run log](${RUN_URL})
+
+          Criterion median throughput. GiB/s where ≥ 1, MiB/s otherwise. Higher is better.
+          x86_64-darwin excluded (Intel Mac GHA runners scarce; results track x86_64-linux).
+
+          ## Headline (jzon)
+
+          <!-- bench:headline-start -->
+          MDEOF
+
+          # Headline table
+          {
+            printf "| Platform | twitter de | twitter ser | citm de | canada ser |\n"
+            printf "|---|--:|--:|--:|--:|\n"
+            for entry in "${PLATFORM_LABELS[@]}"; do
+              pkey="${entry%%:*}"
+              label="${entry##*:}"
+              td="${DATA["${pkey}:twitter de"]:-—}"
+              ts="${DATA["${pkey}:twitter ser"]:-—}"
+              cd="${DATA["${pkey}:citm de"]:-—}"
+              cs="${DATA["${pkey}:canada ser"]:-—}"
+              printf "| %-28s | %10s | %10s | %10s | %10s |\n" "$label" "$td" "$ts" "$cd" "$cs"
+            done
+          } >> BENCHMARKS.md
+
+          echo "" >> BENCHMARKS.md
+          echo "<!-- bench:headline-end -->" >> BENCHMARKS.md
+          echo "" >> BENCHMARKS.md
+
+          # Head-to-head section
+          cat >> BENCHMARKS.md << 'MDEOF'
+          ## Head-to-head vs serde_json / sonic-rs / simd-json
+
+          <!-- bench:h2h-start -->
+          MDEOF
+
+          {
+            printf "| Platform | Workload | jzon | serde_json | sonic_rs | simd_json |\n"
+            printf "|---|---|--:|--:|--:|--:|\n"
+            for entry in "${PLATFORM_LABELS[@]}"; do
+              pkey="${entry%%:*}"
+              label="${entry##*:}"
+              for group in "deserialize/twitter" "serialize/twitter" "deserialize/citm_catalog" "serialize/canada"; do
+                jzon_val="${DATA["${pkey}:${group}/jzon"]:-—}"
+                serde_val="${DATA["${pkey}:${group}/serde_json"]:-—}"
+                sonic_val="${DATA["${pkey}:${group}/sonic_rs"]:-—}"
+                simd_val="${DATA["${pkey}:${group}/simd_json"]:-—}"
+                printf "| %-28s | %-30s | %10s | %10s | %10s | %10s |\n" \
+                  "$label" "$group" "$jzon_val" "$serde_val" "$sonic_val" "$simd_val"
+              done
+            done
+          } >> BENCHMARKS.md
+
+          echo "" >> BENCHMARKS.md
+          echo "<!-- bench:h2h-end -->" >> BENCHMARKS.md
+          echo "" >> BENCHMARKS.md
+
+          cat >> BENCHMARKS.md << MDEOF
+          ## Reproducing
+
+          \`\`\`bash
+          gh workflow run bench.yml --ref main \\
+            -f bench=bench_cmp \\
+            -f features=${FEATURES} \\
+            -f measurement_time=6
+          \`\`\`
+          MDEOF
+
+          echo "Generated BENCHMARKS.md"
+
+          # ── update README markers ────────────────────────────────────────
+
+          HEADLINE_TABLE=$(sed -n '/<!-- bench:headline-start -->/,/<!-- bench:headline-end -->/p' BENCHMARKS.md \
+            | grep -v '<!-- bench:')
+
+          for readme in README.md crates/jzon/README.md; do
+            [ -f "$readme" ] || continue
+            if grep -q '<!-- bench:headline-start -->' "$readme" 2>/dev/null; then
+              replace_marker "$readme" "headline" "$HEADLINE_TABLE"
+              echo "Updated markers in $readme"
+            fi
+          done
+
+          # ── compute delta vs current main ───────────────────────────────
+
+          DELTA_REPORT=""
+
+          # Read baseline from main branch's BENCHMARKS.md if it exists
+          if git show origin/main:BENCHMARKS.md > /tmp/main-benchmarks.md 2>/dev/null; then
+            echo "Computing delta vs main..."
+            DELTA_LINES=""
+            for entry in "${PLATFORM_LABELS[@]}"; do
+              pkey="${entry%%:*}"
+              label="${entry##*:}"
+              for group_key in "twitter de" "twitter ser" "citm de" "canada ser"; do
+                new_val="${DATA["${pkey}:${group_key}"]:-}"
+                [ -z "$new_val" ] || [ "$new_val" = "—" ] && continue
+
+                # Extract old value from main BENCHMARKS.md headline table
+                old_val=$(grep -A20 '<!-- bench:headline-start -->' /tmp/main-benchmarks.md \
+                  | grep "${label}" | grep -oP '\d+\.?\d* [GMi]iB/s' | head -1 || true)
+                [ -z "$old_val" ] && continue
+
+                # Parse both to MiB/s for comparison
+                to_mib() {
+                  echo "$1" | awk '{
+                    if ($2 == "GiB/s") print $1 * 1024
+                    else if ($2 == "MiB/s") print $1
+                    else print 0
+                  }'
+                }
+                new_mib=$(to_mib "$new_val")
+                old_mib=$(to_mib "$old_val")
+                [ "$old_mib" = "0" ] && continue
+
+                pct=$(awk "BEGIN { printf \"%.1f\", ($new_mib - $old_mib) / $old_mib * 100 }")
+                if awk "BEGIN { exit ($pct > 0.5 || $pct < -0.5) ? 0 : 1 }"; then
+                  sign=$(awk "BEGIN { print ($pct > 0) ? \"+\" : \"\" }")
+                  DELTA_LINES="${DELTA_LINES}| ${label} | ${group_key} | ${old_val} | ${new_val} | **${sign}${pct}%** |\n"
+                fi
+              done
+            done
+            if [ -n "$DELTA_LINES" ]; then
+              DELTA_REPORT="## Delta vs main\n\n| Platform | Workload | main | this run | Δ |\n|---|---|--:|--:|--:|\n${DELTA_LINES}"
+            fi
+          fi
+
+          echo "DELTA_REPORT<<EOF" >> "$GITHUB_ENV"
+          printf "%s" "$DELTA_REPORT" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
+
+      - name: Commit + create/update PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REF_SLUG="${{ inputs.ref || github.ref_name }}"
+          # Sanitise for branch name
+          REF_SLUG=$(echo "$REF_SLUG" | sed 's|refs/heads/||; s|[^a-zA-Z0-9._-]|-|g')
+          BRANCH="bench-results/${REF_SLUG}"
+          BASE_REF="${{ inputs.ref || github.ref_name }}"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create or reset the bench-results branch on top of the measured ref
+          git checkout -B "$BRANCH"
+          git add BENCHMARKS.md README.md crates/jzon/README.md 2>/dev/null || true
+          git diff --cached --quiet && echo "No changes" && exit 0
+
+          git commit -m "bench: update BENCHMARKS.md for ${BASE_REF} ($(date -u '+%Y-%m-%d'))"
+          git push --force origin "$BRANCH"
+
+          # Create or update PR
+          EXISTING=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number' || true)
+
+          PR_BODY="Auto-generated benchmark results for \`${BASE_REF}\`.
+
+          Features: \`${{ inputs.features }}\` · [Run log](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          ${DELTA_REPORT}
+
+          ---
+          *Updated automatically by bench.yml. Merge to publish bench numbers.*"
+
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --body "$PR_BODY"
+            echo "Updated PR #${EXISTING}"
+          else
+            gh pr create \
+              --head "$BRANCH" \
+              --base "$BASE_REF" \
+              --title "bench: update BENCHMARKS.md for ${BASE_REF}" \
+              --body "$PR_BODY"
+          fi
