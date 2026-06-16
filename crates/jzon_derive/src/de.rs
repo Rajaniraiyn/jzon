@@ -305,10 +305,9 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
     let dispatch_expr = generate_optimized_dispatch(&dispatch_entries, num_active);
 
     // ── Optimization 1: deny_unknown_fields first-byte prefix check ───────────
-    // ponytail: collect unique first bytes at proc-macro time; emit a tiny const
-    // slice + one .contains() check before any string comparison.  Prunes ~80-90%
-    // of unknown-field candidates for typical structs without touching scanner API.
-    let first_byte_check: TokenStream = if container.deny_unknown_fields && !dispatch_entries.is_empty() {
+    // Only emit for small structs (≤8 fields): for larger structs the O(N) linear
+    // scan over VALID_FIRST_BYTES is worse than going straight to the PHF dispatch.
+    let first_byte_check: TokenStream = if container.deny_unknown_fields && !dispatch_entries.is_empty() && num_active <= 8 {
         // Collect every unique first byte across all keys (including aliases).
         let mut first_bytes: Vec<u8> = dispatch_entries
             .iter()
@@ -320,7 +319,6 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
         let byte_lits: Vec<TokenStream> = first_bytes.iter().map(|&b| quote! { #b }).collect();
         let n = first_bytes.len();
         quote! {
-            // compile-time known valid first bytes for all field names (incl. aliases)
             const VALID_FIRST_BYTES: [u8; #n] = [#(#byte_lits),*];
             if !_key.is_empty() && !VALID_FIRST_BYTES.contains(&_key[0]) {
                 return Err(::jzon::Error::UnknownField);
@@ -331,32 +329,20 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
     };
 
     // ── Optimization 2: u8 bitmask for required-field tracking (≤8 fields) ────
-    // ponytail: for small structs replace N separate Option checks with a single
-    // u8 bitmask comparison — 1 byte on stack vs N bytes, one comparison vs a loop.
-    //
-    // "Required" here means: not skip/skip_deserializing, not Option<T>, no default,
-    // container-level default not set.  We only use the bitmask when num_active ≤ 8.
-    //
-    // Compute required_slots only for bitmask-eligible structs (num_active ≤ 8) so
-    // that `1u8 << slot` never overflows at proc-macro time.
-    let use_bitmask: bool;
-    let required_slots: Vec<usize>;
-    let required_mask: u8;
-
-    if num_active <= 8 {
-        required_slots = active_deserialized.iter().enumerate().filter_map(|(slot, f)| {
+    // For small structs replace N separate Option checks with a single u8 bitmask
+    // comparison.  num_active ≤ 8 ensures `1u8 << slot` never overflows.
+    let (use_bitmask, required_slots, required_mask): (bool, Vec<usize>, u8) = if num_active <= 8 {
+        let slots: Vec<usize> = active_deserialized.iter().enumerate().filter_map(|(slot, f)| {
             let is_required = !container.default
                 && !is_option(f.ty)
                 && matches!(f.fattrs.default, FieldDefault::None)
-                && !f.fattrs.skip_serializing; // skip_serializing fields use unwrap_or_default
+                && !f.fattrs.skip_serializing;
             if is_required { Some(slot) } else { None }
         }).collect();
-        use_bitmask = !required_slots.is_empty();
-        required_mask = required_slots.iter().fold(0u8, |acc, &slot| acc | (1u8 << slot));
+        let mask = slots.iter().fold(0u8, |acc, &s| acc | (1u8 << s));
+        (!slots.is_empty(), slots, mask)
     } else {
-        required_slots = Vec::new();
-        use_bitmask = false;
-        required_mask = 0;
+        (false, Vec::new(), 0)
     };
 
     let inline_attr: TokenStream = if num_active <= 4 {
@@ -377,10 +363,9 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
         let next_slot = if num_active > 0 { (hint_slot + 1) % num_active } else { 0 };
 
         if use_bitmask {
-            let slot = hint_slot_map[idx];
-            let is_required = required_slots.contains(&slot);
+            let is_required = required_slots.contains(&hint_slot);
             if is_required {
-                let bit: u8 = 1u8 << slot;
+                let bit: u8 = 1u8 << hint_slot;
                 quote! {
                     #idx => {
                         #fname = Some(#read_expr);
@@ -491,12 +476,7 @@ fn expand_struct(input: &DeriveInput) -> Result<TokenStream> {
         }
     }).collect();
 
-    // Bitmask init: only emitted when use_bitmask is true.
-    let bitmask_init: TokenStream = if use_bitmask {
-        quote! { let mut _found: u8 = 0; }
-    } else {
-        quote! {}
-    };
+    let bitmask_init: TokenStream = if use_bitmask { quote! { let mut _found: u8 = 0; } } else { quote! {} };
 
     Ok(quote! {
         #(#field_name_assertions)*
