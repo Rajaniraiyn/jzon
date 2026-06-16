@@ -144,6 +144,22 @@ impl<'de> Scanner<'de> {
     /// Not `#[cold]` — pretty-printed JSON calls this on every field separator.
     #[inline]
     fn skip_whitespace_swar(&mut self) {
+        // 8-byte SWAR bulk scan: all 4 JSON whitespace bytes (0x09,0x0A,0x0D,0x20)
+        // are ≤ 0x20, so the "all high-bits set after sub(0x21)" trick bulk-skips
+        // them. VT(0x0B) and FF(0x0C) also satisfy this, so the byte-by-byte tail
+        // re-validates: bulk skip advances past any ≤0x20 byte, tail rejects non-WS.
+        while self.pos + 8 <= self.input.len() {
+            let chunk = u64::from_le_bytes(
+                self.input[self.pos..self.pos + 8].try_into().unwrap(),
+            );
+            let sub = chunk.wrapping_sub(0x2121_2121_2121_2121_u64);
+            if (sub & 0x8080_8080_8080_8080_u64) == 0x8080_8080_8080_8080_u64 {
+                self.pos += 8;
+            } else {
+                break;
+            }
+        }
+        // Byte-by-byte tail: precise WS test rejects VT/FF.
         while let Some(&b) = self.input.get(self.pos) {
             if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' {
                 self.pos += 1;
@@ -177,16 +193,19 @@ impl<'de> Scanner<'de> {
         self.skip_whitespace();
         self.expect_byte(b'"')?;
         let start = self.pos;
-        // Single pass: find_escape stops at `"`, `\`, or any byte < 0x20.
-        let stop = simd::find_escape(self.input, self.pos);
+        // Fast path: find() only stops at `"` or `\` — fastest SIMD kernel.
+        // On `"` hit the key slice is in L1 cache; has_control_char is near-free.
+        let stop = simd::find(self.input, self.pos);
         match self.input.get(stop) {
             Some(&b'"') => {
+                if simd::has_control_char(&self.input[start..stop]) {
+                    return Err(Error::InvalidEscape);
+                }
                 self.pos = stop + 1;
                 Ok(&self.input[start..stop])
             }
             Some(&b'\\') => Err(Error::EscapedKey),
-            Some(_) => Err(Error::InvalidEscape), // control char < 0x20
-            None => Err(err_eof()),
+            _ => Err(err_eof()),
         }
     }
 
@@ -213,12 +232,15 @@ impl<'de> Scanner<'de> {
         self.skip_whitespace();
         self.expect_byte(b'"')?;
         let start = self.pos;
-        // Single pass: find_escape stops at `"`, `\`, or any byte < 0x20.
-        // A hit on `"` means the string is clean — no escapes, no control chars.
-        let stop = simd::find_escape(self.input, start);
+        // Fast path: find() only stops at `"` or `\` — fastest SIMD kernel.
+        // On `"` hit the string is in L1 cache; has_control_char is near-free.
+        let stop = simd::find(self.input, start);
 
         match self.input.get(stop) {
             Some(&b'"') => {
+                if simd::has_control_char(&self.input[start..stop]) {
+                    return Err(Error::InvalidEscape);
+                }
                 let s = core::str::from_utf8(&self.input[start..stop])
                     .map_err(|_| Error::InvalidUtf8)?;
                 self.pos = stop + 1;

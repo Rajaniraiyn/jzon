@@ -214,6 +214,14 @@ fn find_escape_simd32(input: &[u8], start: usize) -> usize {
     find_escape_simd16(input, i)
 }
 
+/// Returns `true` if `slice` contains a raw control byte (< 0x20).
+/// Called after `find()` returns `"` — the slice is already in L1 cache,
+/// so this scalar loop is essentially free for typical string lengths.
+#[inline]
+pub fn has_control_char(slice: &[u8]) -> bool {
+    slice.iter().any(|&b| b < 0x20)
+}
+
 /// Find the first byte needing JSON string escaping (`"`, `\`, or `< 0x20`).
 #[inline]
 pub fn find_escape(input: &[u8], start: usize) -> usize {
