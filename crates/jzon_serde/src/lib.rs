@@ -449,13 +449,18 @@ pub struct Deserializer<'de> {
 pub fn from_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
     let scanner = Scanner::new_str(s);
     let mut de = Deserializer { scanner };
-    T::deserialize(&mut de)
+    let value = T::deserialize(&mut de)?;
+    // ECMA-404: a JSON text is exactly one value — reject trailing content.
+    de.scanner.expect_eof()?;
+    Ok(value)
 }
 
 pub fn from_slice<'de, T: serde::Deserialize<'de>>(b: &'de [u8]) -> Result<T, Error> {
     let scanner = Scanner::new(b);
     let mut de = Deserializer { scanner };
-    T::deserialize(&mut de)
+    let value = T::deserialize(&mut de)?;
+    de.scanner.expect_eof()?;
+    Ok(value)
 }
 
 fn from_reader_inner<'de, T: serde::Deserialize<'de>>(b: &'de [u8]) -> Result<T, Error> {

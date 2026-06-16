@@ -137,28 +137,19 @@ impl<'de> Scanner<'de> {
 
     /// SWAR whitespace skipper — called only when the first byte IS whitespace.
     ///
-    /// All JSON whitespace bytes (0x09, 0x0A, 0x0D, 0x20) are ≤ 0x20.
-    /// All structural bytes are > 0x20.  Trick: subtract 0x21 from a byte —
-    /// values ≤ 0x20 wrap and get their high bit set; values ≥ 0x21 do not.
-    /// Applied to all 8 bytes at once with 64-bit arithmetic.
+    /// JSON whitespace (ECMA-404 §2) is exactly: 0x09 (TAB), 0x0A (LF),
+    /// 0x0D (CR), 0x20 (SP).  VT (0x0B) and FF (0x0C) are NOT valid JSON
+    /// whitespace even though they are ≤ 0x20.
     ///
     /// Not `#[cold]` — pretty-printed JSON calls this on every field separator.
     #[inline]
     fn skip_whitespace_swar(&mut self) {
-        while self.pos + 8 <= self.input.len() {
-            let chunk = u64::from_le_bytes(
-                self.input[self.pos..self.pos + 8].try_into().unwrap(),
-            );
-            let sub = chunk.wrapping_sub(0x2121_2121_2121_2121_u64);
-            if (sub & 0x8080_8080_8080_8080_u64) == 0x8080_8080_8080_8080_u64 {
-                self.pos += 8;
+        while let Some(&b) = self.input.get(self.pos) {
+            if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' {
+                self.pos += 1;
             } else {
                 break;
             }
-        }
-        while let Some(&b) = self.input.get(self.pos) {
-            if b > b' ' { break; }
-            self.pos += 1;
         }
     }
 
@@ -166,6 +157,18 @@ impl<'de> Scanner<'de> {
     pub fn peek_byte_after_ws(&mut self) -> Result<u8, Error> {
         self.skip_whitespace();
         self.peek_byte()
+    }
+
+    /// After parsing a top-level value, skip trailing whitespace and verify
+    /// that no non-whitespace bytes remain (ECMA-404 requires a single value).
+    #[inline]
+    pub fn expect_eof(&mut self) -> Result<(), Error> {
+        self.skip_whitespace();
+        if self.pos < self.input.len() {
+            Err(Error::UnexpectedToken)
+        } else {
+            Ok(())
+        }
     }
 
     /// Read a JSON object key as a zero-copy `&'de [u8]`.
@@ -178,6 +181,10 @@ impl<'de> Scanner<'de> {
         match self.input.get(stop) {
             Some(&b'"') => {
                 let k = &self.input[start..stop];
+                // ECMA-404 §7: raw control chars forbidden in string bodies.
+                if simd::has_control_char(k) {
+                    return Err(Error::InvalidEscape);
+                }
                 self.pos = stop + 1;
                 Ok(k)
             }
@@ -213,7 +220,13 @@ impl<'de> Scanner<'de> {
 
         match self.input.get(stop) {
             Some(&b'"') => {
-                let s = core::str::from_utf8(&self.input[start..stop])
+                let content = &self.input[start..stop];
+                // ECMA-404 §7: raw control characters (U+0000–U+001F) are
+                // forbidden inside string bodies — they must be \-escaped.
+                if simd::has_control_char(content) {
+                    return Err(Error::InvalidEscape);
+                }
+                let s = core::str::from_utf8(content)
                     .map_err(|_| Error::InvalidUtf8)?;
                 self.pos = stop + 1;
 
@@ -251,15 +264,35 @@ impl<'de> Scanner<'de> {
             let check = sub.wrapping_add(0x7676_7676_7676_7676_u64);
             (check & 0x8080_8080_8080_8080_u64) == 0
         }
-        while self.pos + 8 <= self.input.len() {
-            let chunk = u64::from_le_bytes(
-                self.input[self.pos..self.pos + 8].try_into().unwrap(),
-            );
-            if swar_all_digits(chunk) { self.pos += 8; } else { break; }
+
+        // Read the integer part.  If it starts with '0', the spec forbids any
+        // further digit immediately following (leading zeros like "01" are invalid).
+        match self.input.get(self.pos) {
+            Some(&b'0') => {
+                self.pos += 1;
+                // Leading zero: next byte must NOT be another digit.
+                if matches!(self.input.get(self.pos), Some(b'0'..=b'9')) {
+                    return Err(Error::InvalidNumber);
+                }
+            }
+            Some(&(b'1'..=b'9')) => {
+                self.pos += 1;
+                // Scan remaining integer digits with SWAR then byte-by-byte.
+                while self.pos + 8 <= self.input.len() {
+                    let chunk = u64::from_le_bytes(
+                        self.input[self.pos..self.pos + 8].try_into().unwrap(),
+                    );
+                    if swar_all_digits(chunk) { self.pos += 8; } else { break; }
+                }
+                while let Some(&b) = self.input.get(self.pos) { if b.is_ascii_digit() { self.pos += 1; } else { break; } }
+            }
+            _ => {} // will be caught by the end-check below
         }
-        while let Some(&b) = self.input.get(self.pos) { if b.is_ascii_digit() { self.pos += 1; } else { break; } }
+
         if self.input.get(self.pos) == Some(&b'.') {
             self.pos += 1;
+            // At least one digit must follow the decimal point.
+            let digits_start = self.pos;
             while self.pos + 8 <= self.input.len() {
                 let chunk = u64::from_le_bytes(
                     self.input[self.pos..self.pos + 8].try_into().unwrap(),
@@ -267,6 +300,10 @@ impl<'de> Scanner<'de> {
                 if swar_all_digits(chunk) { self.pos += 8; } else { break; }
             }
             while let Some(&b) = self.input.get(self.pos) { if b.is_ascii_digit() { self.pos += 1; } else { break; } }
+            if self.pos == digits_start {
+                // No digit after '.': "1." is invalid JSON.
+                return Err(Error::InvalidNumber);
+            }
         }
         if matches!(self.input.get(self.pos), Some(b'e') | Some(b'E')) {
             self.pos += 1;
@@ -428,7 +465,12 @@ impl<'de> Scanner<'de> {
         // avoids the Vec-doubling realloc chain on escape-heavy strings.
         let mut buf: Vec<u8> =
             Vec::with_capacity(self.input.len().saturating_sub(content_start));
-        buf.extend_from_slice(&self.input[content_start..self.pos]);
+        let prefix = &self.input[content_start..self.pos];
+        // ECMA-404 §7: raw control chars in the prefix (before the first \) are invalid.
+        if simd::has_control_char(prefix) {
+            return Err(Error::InvalidEscape);
+        }
+        buf.extend_from_slice(prefix);
 
         loop {
             match self.input.get(self.pos) {
@@ -476,7 +518,12 @@ impl<'de> Scanner<'de> {
                 Some(_) => {
                     let seg_start = self.pos;
                     let stop = simd::find(self.input, self.pos);
-                    buf.extend_from_slice(&self.input[seg_start..stop]);
+                    let seg = &self.input[seg_start..stop];
+                    // ECMA-404 §7: raw control characters forbidden in strings.
+                    if simd::has_control_char(seg) {
+                        return Err(Error::InvalidEscape);
+                    }
+                    buf.extend_from_slice(seg);
                     self.pos = stop;
                 }
                 None => return Err(err_eof()),
