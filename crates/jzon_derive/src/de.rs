@@ -1043,7 +1043,7 @@ fn field_read_expr(ty: &Type, _de_lt: &Lifetime) -> TokenStream {
             {
                 let _js = scanner.read_str()?;
                 match _js {
-                    ::jzon::JsonStr::Borrowed(b) => b,
+                    ::jzon::JsonStr::Borrowed(b) | ::jzon::JsonStr::BorrowedNoEsc(b) => b,
                     ::jzon::JsonStr::Owned(_) => {
                         return Err(::jzon::Error::EscapedString);
                     }
