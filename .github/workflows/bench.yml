@@ -161,16 +161,23 @@ jobs:
           # Outputs e.g. "1.22 GiB/s" or "702 MiB/s" or "" if not found.
           extract_thrpt() {
             local log="$1" pattern="$2"
+            # Criterion output format:
+            #   <group>/<bench>                   ← bare name line, no leading spaces
+            #                   time:   [lo mid hi unit]
+            #                   thrpt:  [lo mid hi unit]
+            # "Benchmarking <group>/<bench>" lines appear earlier and must be skipped.
             awk -v pat="$pattern" '
-              $0 ~ pat { found=1; next }
+              # Match lines that start with the exact pattern (name may be followed by spaces+time:)
+              /^[^ ]/ && substr($0, 1, length(pat)) == pat && (length($0) == length(pat) || substr($0, length(pat)+1, 1) == " ") {
+                found=1; next
+              }
               found && /thrpt:/ {
-                # line: "  thrpt:  [low mid high unit]"
-                # extract the middle token between the second and third spaces after "["
-                match($0, /\[([0-9.]+) ([0-9.]+) ([0-9.]+) ([A-Za-z/]+)/, a)
-                if (a[0]) {
-                  val  = a[2]+0   # median
-                  unit = a[4]
-                  # normalise to GiB/s or MiB/s
+                # strip to the bracket contents: "[lo mid hi unit]"
+                sub(/.*\[/, ""); sub(/\].*/, "")
+                # fields: lo mid hi unit  (3 numbers then unit)
+                n = split($0, f, " ")
+                if (n >= 4) {
+                  val = f[3]+0; unit = f[4]  # format: lo unit mid unit hi unit
                   if (unit == "GiB/s") {
                     printf "%.2f GiB/s", val
                   } else if (unit == "MiB/s") {
@@ -182,7 +189,7 @@ jobs:
                 }
                 found=0; next
               }
-              found && /^[A-Za-z]/ { found=0 }
+              found && /^[^ ]/ && !/thrpt:/ { found=0 }
             ' "$log"
           }
 
@@ -219,14 +226,15 @@ jobs:
             "aarch64-windows:Windows on ARM"
           )
 
-          # Workloads: "criterion_group_pattern|display_name"
+          # Workloads: "criterion_pattern:display_name"
+          # Patterns must match the bare name line exactly (prefix match used).
+          # citm_catalog uses jzon/A as the bench function name in bench_cmp.rs.
           WORKLOADS=(
             "deserialize/twitter/jzon:twitter de"
             "serialize/twitter/jzon:twitter ser"
-            "deserialize/citm_catalog/jzon:citm_catalog de"
+            "deserialize/citm_catalog/jzon/A:citm de"
             "deserialize/canada/jzon:canada de"
             "serialize/canada/jzon:canada ser"
-            "deserialize/citm_catalog/jzon:citm de"
           )
 
           # Also gather competitor numbers for the head-to-head table
