@@ -76,6 +76,10 @@ pub struct FieldAttrs {
     pub flatten: bool,
     /// `#[serde(other)]` on an enum variant — catch-all for unknown variants
     pub other: bool,
+    /// `#[rjson(serialize_with = "path")]` — fn(&T, &mut Vec<u8>)
+    pub serialize_with: Option<ExprPath>,
+    /// `#[rjson(deserialize_with = "path")]` — fn(&mut Scanner<'de>) -> Result<T, Error>
+    pub deserialize_with: Option<ExprPath>,
 }
 
 // ── parsing ───────────────────────────────────────────────────────────────────
@@ -121,11 +125,9 @@ pub fn parse_container_attrs(attrs: &[Attribute]) -> Result<ContainerAttrs> {
                 if meta.input.peek(syn::Token![=]) { let _: LitStr = meta.value()?.parse()?; }
             } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
                 Some("serialize_with" | "deserialize_with" | "with")) {
-                return Err(Error::new_spanned(
-                    meta.path,
-                    "jzon does not support serialize_with/deserialize_with/with — \
-                     use jzon_serde (Mode B) or jzon_compat (Mode C) for custom ser/de functions",
-                ));
+                // Container-level with/serialize_with/deserialize_with are not valid serde attrs
+                // at the container level either; consume value and ignore silently.
+                if meta.input.peek(syn::Token![=]) { let _: LitStr = meta.value()?.parse()?; }
             } else if is_rjson {
                 // #[serde(...)] unknowns are silently ignored — serde owns that
                 // namespace and will validate them. #[rjson(...)] unknowns are
@@ -180,12 +182,25 @@ pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
             } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
                 Some("bound" | "getter")) {
                 if meta.input.peek(syn::Token![=]) { let _: LitStr = meta.value()?.parse()?; }
+            } else if meta.path.is_ident("serialize_with") && is_rjson {
+                let s: LitStr = meta.value()?.parse()?;
+                let path: ExprPath = s.parse()?;
+                out.serialize_with = Some(path);
+            } else if meta.path.is_ident("deserialize_with") && is_rjson {
+                let s: LitStr = meta.value()?.parse()?;
+                let path: ExprPath = s.parse()?;
+                out.deserialize_with = Some(path);
             } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
                 Some("serialize_with" | "deserialize_with" | "with")) {
+                // This is the serde namespace — these can't bridge to jzon's Vec<u8>/Scanner API.
                 return Err(Error::new_spanned(
                     meta.path,
-                    "jzon does not support serialize_with/deserialize_with/with — \
-                     use jzon_serde (Mode B) or jzon_compat (Mode C) for custom ser/de functions",
+                    "jzon does not support #[serde(serialize_with/deserialize_with/with)] — \
+                     use jzon_serde (Mode B) or jzon_compat (Mode C) for serde-compatible custom \
+                     ser/de functions; for a jzon-native escape hatch, use \
+                     #[rjson(serialize_with = \"path\")] where path: fn(&T, &mut Vec<u8>) \
+                     or #[rjson(deserialize_with = \"path\")] where path: \
+                     fn(&mut jzon::Scanner) -> Result<T, jzon::Error>",
                 ));
             } else if is_rjson {
                 return Err(meta.error(format!(
