@@ -256,6 +256,14 @@ jobs:
               name="${wl##*:}"
               val=$(extract_thrpt "$log" "$pattern")
               DATA["${platform}:${name}"]="${val:-—}"
+              # Also store under the full criterion path for h2h lookup.
+              # Map display name → criterion group prefix for jzon column.
+              case "$name" in
+                "twitter de")  DATA["${platform}:deserialize/twitter/jzon"]="${val:-—}" ;;
+                "twitter ser") DATA["${platform}:serialize/twitter/jzon"]="${val:-—}" ;;
+                "citm de")     DATA["${platform}:deserialize/citm_catalog/jzon"]="${val:-—}" ;;
+                "canada ser")  DATA["${platform}:serialize/canada/jzon"]="${val:-—}" ;;
+              esac
             done
 
             for comp in "${COMPETITORS[@]}"; do
@@ -287,7 +295,25 @@ jobs:
           <!-- bench:headline-start -->
           MDEOF
 
-          # Headline table
+          # Headline table — only rows with at least one real value
+          # Track best value per column (in MiB/s for comparison)
+          to_mib() {
+            echo "$1" | awk '{
+              if ($2=="GiB/s") printf "%.1f", $1*1024
+              else if ($2=="MiB/s") printf "%.1f", $1
+              else print 0
+            }'
+          }
+          fmt_mib() {
+            # Convert MiB/s float back to display string
+            echo "$1" | awk '{
+              v=$1+0
+              if (v>=1024) printf "%.2f GiB/s", v/1024
+              else printf "%.0f MiB/s", v
+            }'
+          }
+          BEST_TD=0; BEST_TS=0; BEST_CD=0; BEST_CS=0
+          declare -A BEST_ROW
           {
             printf "| Platform | twitter de | twitter ser | citm de | canada ser |\n"
             printf "|---|--:|--:|--:|--:|\n"
@@ -298,8 +324,27 @@ jobs:
               ts="${DATA["${pkey}:twitter ser"]:-—}"
               cd="${DATA["${pkey}:citm de"]:-—}"
               cs="${DATA["${pkey}:canada ser"]:-—}"
+              # Skip all-dash rows (platform didn't run)
+              [ "$td$ts$cd$cs" = "————" ] && continue
               printf "| %-28s | %10s | %10s | %10s | %10s |\n" "$label" "$td" "$ts" "$cd" "$cs"
+              # Track best per column
+              for col_var in "td:BEST_TD" "ts:BEST_TS" "cd:BEST_CD" "cs:BEST_CS"; do
+                col="${col_var%%:*}"; bvar="${col_var##*:}"
+                val=$(eval echo "\$$col")
+                [ "$val" = "—" ] && continue
+                mib=$(to_mib "$val")
+                cur=$(eval echo "\$$bvar")
+                if awk "BEGIN{exit ($mib > $cur) ? 0 : 1}" 2>/dev/null; then
+                  eval "$bvar=$mib"
+                  BEST_ROW[$col]="$val"
+                fi
+              done
             done
+            # Best row — only if we have data
+            if [ -n "${BEST_ROW[td]:-}${BEST_ROW[ts]:-}${BEST_ROW[cd]:-}${BEST_ROW[cs]:-}" ]; then
+              printf "| **Best across platforms** | %10s | %10s | %10s | %10s |\n" \
+                "${BEST_ROW[td]:-—}" "${BEST_ROW[ts]:-—}" "${BEST_ROW[cd]:-—}" "${BEST_ROW[cs]:-—}"
+            fi
           } >> BENCHMARKS.md
 
           echo "" >> BENCHMARKS.md
@@ -324,6 +369,8 @@ jobs:
                 serde_val="${DATA["${pkey}:${group}/serde_json"]:-—}"
                 sonic_val="${DATA["${pkey}:${group}/sonic_rs"]:-—}"
                 simd_val="${DATA["${pkey}:${group}/simd_json"]:-—}"
+                # Skip rows where all are dash (platform didn't run)
+                [ "$jzon_val$serde_val$sonic_val$simd_val" = "————" ] && continue
                 printf "| %-28s | %-30s | %10s | %10s | %10s | %10s |\n" \
                   "$label" "$group" "$jzon_val" "$serde_val" "$sonic_val" "$simd_val"
               done
@@ -348,6 +395,8 @@ jobs:
           echo "Generated BENCHMARKS.md"
 
           # ── update README markers ────────────────────────────────────────
+          # README gets the full platform table from BENCHMARKS.md (markers include it).
+          # We also emit a "top number" line above the table for the lede.
 
           HEADLINE_TABLE=$(sed -n '/<!-- bench:headline-start -->/,/<!-- bench:headline-end -->/p' BENCHMARKS.md \
             | grep -v '<!-- bench:')
@@ -356,21 +405,29 @@ jobs:
             [ -f "$readme" ] || continue
             if grep -q '<!-- bench:headline-start -->' "$readme" 2>/dev/null; then
               replace_marker "$readme" "headline" "$HEADLINE_TABLE"
-              echo "Updated markers in $readme"
+              echo "Updated headline in $readme"
+            fi
+            # Update top-ser lede with best twitter ser across all platforms
+            if grep -q '<!-- bench:top-ser-start -->' "$readme" 2>/dev/null; then
+              BEST_TS_VAL="${BEST_ROW[ts]:-}"
+              if [ -n "$BEST_TS_VAL" ]; then
+                replace_marker "$readme" "top-ser" "Top: **${BEST_TS_VAL}** twitter serialize"
+                echo "Updated top-ser in $readme"
+              fi
             fi
           done
 
           # ── show what changed vs main (diff of marker blocks) ──────────
           # Rely on the PR "Files changed" tab for the full diff.
           # Here we just list which platforms have new data this run.
-          PLATFORMS_RAN=""
+          PLATFORMS_RAN="Platforms measured this run:"$'\n'
           for entry in "${PLATFORM_LABELS[@]}"; do
             pkey="${entry%%:*}"
             label="${entry##*:}"
             val="${DATA["${pkey}:twitter ser"]:-}"
-            [ "$val" != "—" ] && [ -n "$val" ] && PLATFORMS_RAN="${PLATFORMS_RAN}- ${label}: ${val} twitter ser\n"
+            [ "$val" != "—" ] && [ -n "$val" ] && PLATFORMS_RAN="${PLATFORMS_RAN}"$'\n'"- ${label}: ${val} twitter ser"
           done
-          printf "Platforms measured this run:\n\n${PLATFORMS_RAN}" > /tmp/delta-report.md
+          echo "$PLATFORMS_RAN" > /tmp/delta-report.md
 
       - name: Commit + create/update PR
         shell: bash

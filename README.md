@@ -89,8 +89,7 @@ drop-in replacement).
 ## Benchmarks
 
 Up to **3.6× serde_json**, **2.4× sonic-rs**, **7.8× simd-json** on
-real-world workloads. Top number: **53.6 GiB/s** twitter serialize
-on Apple Silicon.
+real-world workloads. <!-- bench:top-ser-start -->Top: **53.6 GiB/s** twitter serialize on Apple Silicon<!-- bench:top-ser-end -->.
 
 <!-- bench:headline-start -->
 | Platform | twitter de | twitter ser | citm de | canada ser |
