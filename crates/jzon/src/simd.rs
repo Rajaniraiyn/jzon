@@ -215,11 +215,29 @@ fn find_escape_simd32(input: &[u8], start: usize) -> usize {
 }
 
 /// Returns `true` if `slice` contains a raw control byte (< 0x20).
-/// Called after `find()` returns `"` — the slice is already in L1 cache,
-/// so this scalar loop is essentially free for typical string lengths.
+/// Uses SWAR to check 8 bytes per iteration — much faster than scalar for
+/// typical string lengths (5-50 bytes all in L1 cache).
+/// SWAR trick: byte b < 0x20 iff b.wrapping_sub(0x20) has its high bit set
+/// AND the original byte did NOT have its high bit set (avoids catching 0x80+).
 #[inline]
 pub fn has_control_char(slice: &[u8]) -> bool {
-    slice.iter().any(|&b| b < 0x20)
+    const REPEAT: u64 = 0x2020_2020_2020_2020_u64;
+    const HIGH:   u64 = 0x8080_8080_8080_8080_u64;
+    let mut i = 0;
+    while i + 8 <= slice.len() {
+        let chunk = u64::from_le_bytes(slice[i..i + 8].try_into().unwrap());
+        // b < 0x20: (b - 0x20) wraps → high bit set; but also check ~b has high bit
+        // (exclude bytes ≥ 0x80 which would wrap differently).
+        if (chunk.wrapping_sub(REPEAT) & !chunk & HIGH) != 0 {
+            return true;
+        }
+        i += 8;
+    }
+    while i < slice.len() {
+        if slice[i] < 0x20 { return true; }
+        i += 1;
+    }
+    false
 }
 
 /// Find the first byte needing JSON string escaping (`"`, `\`, or `< 0x20`).

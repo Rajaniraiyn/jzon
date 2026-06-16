@@ -193,11 +193,18 @@ impl<'de> Scanner<'de> {
         self.skip_whitespace();
         self.expect_byte(b'"')?;
         let start = self.pos;
-        // Fast path: find() only stops at `"` or `\` — fastest SIMD kernel.
-        // On `"` hit the key slice is in L1 cache; has_control_char is near-free.
+        // When simd-intrinsics are active the find_escape kernels (NEON/AVX2)
+        // fuse quote+backslash+ctrl<0x20 in a single SIMD pass — negligible extra
+        // cost over find(). On scalar/SWAR paths, use find() + SWAR has_control_char
+        // to avoid a byte-by-byte second pass.
+        #[cfg(feature = "simd-intrinsics")]
+        let stop = simd::find_escape(self.input, self.pos);
+        #[cfg(not(feature = "simd-intrinsics"))]
         let stop = simd::find(self.input, self.pos);
+
         match self.input.get(stop) {
             Some(&b'"') => {
+                #[cfg(not(feature = "simd-intrinsics"))]
                 if simd::has_control_char(&self.input[start..stop]) {
                     return Err(Error::InvalidEscape);
                 }
@@ -205,6 +212,7 @@ impl<'de> Scanner<'de> {
                 Ok(&self.input[start..stop])
             }
             Some(&b'\\') => Err(Error::EscapedKey),
+            Some(_) => Err(Error::InvalidEscape), // control char from find_escape
             _ => Err(err_eof()),
         }
     }
@@ -232,12 +240,14 @@ impl<'de> Scanner<'de> {
         self.skip_whitespace();
         self.expect_byte(b'"')?;
         let start = self.pos;
-        // Fast path: find() only stops at `"` or `\` — fastest SIMD kernel.
-        // On `"` hit the string is in L1 cache; has_control_char is near-free.
+        #[cfg(feature = "simd-intrinsics")]
+        let stop = simd::find_escape(self.input, start);
+        #[cfg(not(feature = "simd-intrinsics"))]
         let stop = simd::find(self.input, start);
 
         match self.input.get(stop) {
             Some(&b'"') => {
+                #[cfg(not(feature = "simd-intrinsics"))]
                 if simd::has_control_char(&self.input[start..stop]) {
                     return Err(Error::InvalidEscape);
                 }
