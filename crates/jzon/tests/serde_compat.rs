@@ -4,9 +4,9 @@
 //! (~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.117/tests/test.rs)
 //! to verify that jzon_serde handles the same serde usage patterns.
 //!
-//! Skipped categories (annotated with #[ignore]):
-//! - `#[serde(flatten)]`  — jzon_serde deserializer doesn't implement flatten yet
-//! - `#[serde(untagged)]` — requires deserialize_any + buffering, not yet supported
+//! All tests pass — including `#[serde(flatten)]`, `#[serde(untagged)]`, and
+//! multi-field tuple enum variants which required a `JsonSeqAccess` drain-on-drop
+//! fix and a `skip_array_tail` addition to the scanner.
 //!
 //! Run with: cargo test -p jzon-rs --test serde_compat
 
@@ -57,12 +57,8 @@ fn ser_i64() {
 
 #[test]
 fn ser_f64() {
-    // jzon serializes whole floats without a trailing ".0" (e.g. 3.0 → "3").
-    // serde_json emits "3.0". This is an acceptable divergence in output format;
-    // the round-trip value is identical.
-    let s = to_string(&3.0f64).unwrap();
-    // Accept either "3.0" (serde_json-style) or "3" (jzon-style)
-    assert!(s == "3.0" || s == "3", "unexpected f64 output: {s}");
+    // jzon_serde now emits "3.0" for whole-number floats, matching serde_json.
+    assert_eq!(to_string(&3.0f64).unwrap(), "3.0");
     assert_eq!(to_string(&3.1f64).unwrap(), "3.1");
     assert_eq!(to_string(&-1.5f64).unwrap(), "-1.5");
     assert_eq!(to_string(&0.5f64).unwrap(), "0.5");
@@ -317,7 +313,6 @@ fn de_enum_unit_variant() {
 }
 
 #[test]
-#[ignore = "jzon_serde does not yet support multi-field tuple variant deserialization (e.g. Frog(String, Vec<isize>))"]
 fn de_enum_tuple_variant() {
     assert_eq!(
         from_str::<Animal>(r#"{"Frog":["Henry",[]]}"#).unwrap(),
@@ -373,7 +368,6 @@ fn roundtrip_animal_supported_variants() {
 }
 
 #[test]
-#[ignore = "jzon_serde does not yet support multi-field tuple variant deserialization"]
 fn roundtrip_all_animal_variants() {
     for animal in &[
         Animal::Dog,
@@ -864,7 +858,7 @@ fn renamed_field_missing_ok_when_option() {
 }
 
 // ============================================================
-// 13. FLATTEN (ignored — not yet supported)
+// 13. FLATTEN
 // ============================================================
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -880,14 +874,13 @@ struct FlatOuter {
 }
 
 #[test]
-#[ignore = "jzon_serde does not yet support #[serde(flatten)] — requires buffered map deserializer"]
 fn flatten_roundtrip() {
     let v = FlatOuter { base: FlatBase { id: 1 }, extra: "hi".to_string() };
     assert_eq!(roundtrip(&v), v);
 }
 
 // ============================================================
-// 14. UNTAGGED ENUMS (ignored — not yet supported)
+// 14. UNTAGGED ENUMS
 // ============================================================
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -898,7 +891,6 @@ enum Untagged {
 }
 
 #[test]
-#[ignore = "jzon_serde does not yet support #[serde(untagged)] — requires deserialize_any + content buffering"]
 fn untagged_enum_roundtrip() {
     assert_eq!(roundtrip(&Untagged::Int(42)), Untagged::Int(42));
     assert_eq!(
