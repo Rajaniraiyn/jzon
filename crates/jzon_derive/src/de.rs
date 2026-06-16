@@ -453,7 +453,7 @@ struct DispatchKey<'a> {
     idx: usize,
 }
 
-fn generate_optimized_dispatch(entries: &[Entry], _num_active: usize) -> TokenStream {
+fn generate_optimized_dispatch(entries: &[Entry], num_active: usize) -> TokenStream {
     if entries.is_empty() {
         return quote! { usize::MAX };
     }
@@ -462,10 +462,7 @@ fn generate_optimized_dispatch(entries: &[Entry], _num_active: usize) -> TokenSt
         .map(|e| DispatchKey { key: &e.key, idx: e.idx })
         .collect();
 
-    // Use PHF when the total number of keys (primary + aliases) exceeds 6.
-    // This ensures alias-heavy structs also benefit from O(1) hash dispatch
-    // even when the active field count alone would not trigger PHF.
-    if all_keys.len() > 6 {
+    if num_active > 6 {
         let key_slices: Vec<&[u8]> = all_keys.iter().map(|dk| dk.key).collect();
         if let Some((mul, table_size)) = find_phf_multiplier(&key_slices) {
             return generate_phf_dispatch(&all_keys, mul, table_size);
