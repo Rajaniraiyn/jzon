@@ -9,8 +9,16 @@ fn err_eof() -> Error { Error::UnexpectedEof }
 fn err_token() -> Error { Error::UnexpectedToken }
 
 /// A parsed JSON string: either a zero-copy borrow or a heap-allocated value.
+///
+/// The `BorrowedNoEsc` variant is returned by [`Scanner::read_str`] when no
+/// escape sequences were present in the JSON input.  This lets the serializer
+/// skip the `find_escape` scan entirely — the string is provably escape-free.
 pub enum JsonStr<'de> {
     Borrowed(&'de str),
+    /// Zero-copy borrow whose content is **provably escape-free** (the scanner
+    /// hit a closing `"` before any `\\`).  The serializer can bypass the
+    /// `find_escape` scan and write the bytes directly.
+    BorrowedNoEsc(&'de str),
     Owned(String),
 }
 
@@ -19,6 +27,7 @@ impl<'de> JsonStr<'de> {
     pub fn as_borrowed(&self) -> Option<&'de str> {
         match self {
             JsonStr::Borrowed(s) => Some(s),
+            JsonStr::BorrowedNoEsc(s) => Some(s),
             JsonStr::Owned(_) => None,
         }
     }
@@ -27,6 +36,7 @@ impl<'de> JsonStr<'de> {
     pub fn as_str(&self) -> &str {
         match self {
             JsonStr::Borrowed(s) => s,
+            JsonStr::BorrowedNoEsc(s) => s,
             JsonStr::Owned(s) => s.as_str(),
         }
     }
@@ -35,6 +45,7 @@ impl<'de> JsonStr<'de> {
     pub fn into_owned(self) -> String {
         match self {
             JsonStr::Borrowed(s) => s.to_owned(),
+            JsonStr::BorrowedNoEsc(s) => s.to_owned(),
             JsonStr::Owned(s) => s,
         }
     }
@@ -205,7 +216,7 @@ impl<'de> Scanner<'de> {
                 #[cfg(feature = "stats")]
                 { self.stats.zero_copy_borrows += 1; }
 
-                Ok(JsonStr::Borrowed(s))
+                Ok(JsonStr::BorrowedNoEsc(s))
             }
             Some(&b'\\') => {
                 self.pos = stop;

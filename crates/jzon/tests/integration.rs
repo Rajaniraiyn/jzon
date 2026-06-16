@@ -1258,3 +1258,85 @@ fn small_bitmask_out_of_order_ok() {
     let v = SmallBitmask::from_json_str(json).unwrap();
     assert_eq!((v.a, v.b, v.c), (10, 20, 30));
 }
+// ── BorrowedNoEsc / zero-copy fast-path tests ─────────────────────────────────
+
+#[test]
+fn jsonstr_borrowed_no_esc_is_returned_for_plain_strings() {
+    // Scanner must return BorrowedNoEsc (not Borrowed) for escape-free input.
+    use jzon::scanner::{JsonStr, Scanner};
+    let input = r#""hello world""#;
+    let mut sc = Scanner::new_str(input);
+    let js = sc.read_str().unwrap();
+    assert!(
+        matches!(js, JsonStr::BorrowedNoEsc(_)),
+        "expected BorrowedNoEsc, got a different variant"
+    );
+    assert_eq!(js.as_str(), "hello world");
+}
+
+#[test]
+fn jsonstr_owned_for_escaped_strings() {
+    // Strings with escapes must NOT be BorrowedNoEsc.
+    use jzon::scanner::{JsonStr, Scanner};
+    let input = r#""hello\nworld""#;
+    let mut sc = Scanner::new_str(input);
+    let js = sc.read_str().unwrap();
+    assert!(
+        matches!(js, JsonStr::Owned(_)),
+        "expected Owned for escaped string, got a different variant"
+    );
+    assert_eq!(js.as_str(), "hello\nworld");
+}
+
+#[test]
+fn jsonstr_no_esc_serializes_correctly() {
+    // BorrowedNoEsc must serialize to valid JSON (quotes, no extra escaping).
+    use jzon::scanner::{JsonStr, Scanner};
+    use jzon::ToJson;
+    let input = r#""quick brown fox""#;
+    let mut sc = Scanner::new_str(input);
+    let js = sc.read_str().unwrap();
+    assert!(matches!(js, JsonStr::BorrowedNoEsc(_)));
+    let out = js.to_json_string();
+    assert_eq!(out, r#""quick brown fox""#);
+}
+
+#[test]
+fn jsonstr_no_esc_roundtrip_matches_write_escaped_str() {
+    // BorrowedNoEsc output must be byte-identical to the normal escape path.
+    use jzon::scanner::{JsonStr, Scanner};
+    use jzon::ser::write_escaped_str;
+    use jzon::ToJson;
+    let plain = "the quick brown fox jumps over the lazy dog";
+    let json_input = format!("\"{}\"", plain);
+    let mut sc = Scanner::new_str(&json_input);
+    let js = sc.read_str().unwrap();
+    assert!(matches!(js, JsonStr::BorrowedNoEsc(_)));
+
+    let fast_path = js.to_json_string();
+    let mut reference = Vec::new();
+    write_escaped_str(plain, &mut reference);
+    assert_eq!(fast_path.as_bytes(), reference.as_slice());
+}
+
+#[test]
+fn jsonstr_as_borrowed_includes_no_esc_variant() {
+    // as_borrowed() must return Some for BorrowedNoEsc (backward-compat).
+    use jzon::scanner::Scanner;
+    let input = r#""test""#;
+    let mut sc = Scanner::new_str(input);
+    let js = sc.read_str().unwrap();
+    assert!(js.as_borrowed().is_some());
+    assert_eq!(js.as_borrowed().unwrap(), "test");
+}
+
+#[test]
+fn jsonstr_into_owned_works_for_no_esc() {
+    use jzon::scanner::{JsonStr, Scanner};
+    let input = r#""owned copy""#;
+    let mut sc = Scanner::new_str(input);
+    let js = sc.read_str().unwrap();
+    assert!(matches!(js, JsonStr::BorrowedNoEsc(_)));
+    let owned: String = js.into_owned();
+    assert_eq!(owned, "owned copy");
+}
