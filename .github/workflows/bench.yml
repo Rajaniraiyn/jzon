@@ -360,51 +360,17 @@ jobs:
             fi
           done
 
-          # ── compute delta vs current main ───────────────────────────────
-
-          DELTA_REPORT=""
-
-          # Read baseline from main branch's BENCHMARKS.md if it exists
-          if git show origin/main:BENCHMARKS.md > /tmp/main-benchmarks.md 2>/dev/null; then
-            echo "Computing delta vs main..."
-            DELTA_LINES=""
-            for entry in "${PLATFORM_LABELS[@]}"; do
-              pkey="${entry%%:*}"
-              label="${entry##*:}"
-              for group_key in "twitter de" "twitter ser" "citm de" "canada ser"; do
-                new_val="${DATA["${pkey}:${group_key}"]:-}"
-                [ -z "$new_val" ] || [ "$new_val" = "—" ] && continue
-
-                # Extract old value from main BENCHMARKS.md headline table
-                old_val=$(grep -A20 '<!-- bench:headline-start -->' /tmp/main-benchmarks.md \
-                  | grep "${label}" | grep -oP '\d+\.?\d* [GMi]iB/s' | head -1 || true)
-                [ -z "$old_val" ] && continue
-
-                # Parse both to MiB/s for comparison
-                to_mib() {
-                  echo "$1" | awk '{
-                    if ($2 == "GiB/s") print $1 * 1024
-                    else if ($2 == "MiB/s") print $1
-                    else print 0
-                  }'
-                }
-                new_mib=$(to_mib "$new_val")
-                old_mib=$(to_mib "$old_val")
-                [ "$old_mib" = "0" ] && continue
-
-                pct=$(awk "BEGIN { printf \"%.1f\", ($new_mib - $old_mib) / $old_mib * 100 }")
-                if awk "BEGIN { exit ($pct > 0.5 || $pct < -0.5) ? 0 : 1 }"; then
-                  sign=$(awk "BEGIN { print ($pct > 0) ? \"+\" : \"\" }")
-                  DELTA_LINES="${DELTA_LINES}| ${label} | ${group_key} | ${old_val} | ${new_val} | **${sign}${pct}%** |\n"
-                fi
-              done
-            done
-            if [ -n "$DELTA_LINES" ]; then
-              DELTA_REPORT="## Delta vs main\n\n| Platform | Workload | main | this run | Δ |\n|---|---|--:|--:|--:|\n${DELTA_LINES}"
-            fi
-          fi
-
-          printf "%s" "$DELTA_REPORT" > /tmp/delta-report.md
+          # ── show what changed vs main (diff of marker blocks) ──────────
+          # Rely on the PR "Files changed" tab for the full diff.
+          # Here we just list which platforms have new data this run.
+          PLATFORMS_RAN=""
+          for entry in "${PLATFORM_LABELS[@]}"; do
+            pkey="${entry%%:*}"
+            label="${entry##*:}"
+            val="${DATA["${pkey}:twitter ser"]:-}"
+            [ "$val" != "—" ] && [ -n "$val" ] && PLATFORMS_RAN="${PLATFORMS_RAN}- ${label}: ${val} twitter ser\n"
+          done
+          printf "Platforms measured this run:\n\n${PLATFORMS_RAN}" > /tmp/delta-report.md
 
       - name: Commit + create/update PR
         shell: bash
@@ -433,11 +399,15 @@ jobs:
 
           DELTA=$(cat /tmp/delta-report.md 2>/dev/null || true)
           {
-            printf 'Auto-generated benchmark results for `%s`.\n\n' "$BASE_REF"
-            printf 'Features: `%s` · [Run log](https://github.com/%s/actions/runs/%s)\n\n' \
-              "${{ inputs.features }}" "${{ github.repository }}" "${{ github.run_id }}"
-            [ -n "$DELTA" ] && printf '%s\n\n' "$DELTA"
-            printf 'Updated automatically by bench.yml. Merge to publish bench numbers.\n'
+            echo "Auto-generated benchmark results for \`${BASE_REF}\`."
+            echo ""
+            echo "Features: \`${{ inputs.features }}\` · [Run log](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo ""
+            echo "${DELTA}"
+            echo ""
+            echo "See **Files changed** tab for the full diff vs previous numbers."
+            echo ""
+            echo "_Updated automatically by bench.yml. Merge to publish._"
           } > /tmp/pr-body.md
 
           if [ -n "$EXISTING" ]; then
