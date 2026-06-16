@@ -491,7 +491,7 @@ impl<'de, 'a> de_trait::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_str<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         let s = self.scanner.read_str()?;
         match s {
-            JsonStr::Borrowed(b) => visitor.visit_borrowed_str(b),
+            JsonStr::Borrowed(b) | JsonStr::BorrowedNoEsc(b) => visitor.visit_borrowed_str(b),
             JsonStr::Owned(o)    => visitor.visit_string(o),
         }
     }
@@ -743,7 +743,7 @@ impl<'de, 'a> de_trait::Deserializer<'de> for MapKeyDeserializer<'a, 'de> {
     fn deserialize_str<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         let s = self.de.scanner.read_str()?;
         match s {
-            JsonStr::Borrowed(b) => visitor.visit_borrowed_str(b),
+            JsonStr::Borrowed(b) | JsonStr::BorrowedNoEsc(b) => visitor.visit_borrowed_str(b),
             JsonStr::Owned(o)    => visitor.visit_string(o),
         }
     }
