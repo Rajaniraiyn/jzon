@@ -1189,7 +1189,50 @@ fn serialize_deserialize_with_roundtrip() {
 
 #[test]
 fn deserialize_with_propagates_error() {
-    // "not_a_number" cannot be parsed as u64 → custom fn returns Err
     let json = r#"{"name":"eve","id":"not_a_number"}"#;
     assert!(WithCustomDe::from_json_str(json).is_err());
+}
+
+// ── schema-scan optimizations ─────────────────────────────────────────────────
+
+#[derive(FromJson, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct DenyStrict {
+    id:    u32,
+    name:  String,
+    score: f64,
+}
+#[test]
+fn deny_unknown_first_byte_mismatch_errors() {
+    let json = r#"{"id":1,"name":"Alice","score":9.5,"zzzUnknown":"x"}"#;
+    assert!(matches!(DenyStrict::from_json_str(json), Err(jzon::Error::UnknownField)));
+}
+#[test]
+fn deny_unknown_known_first_byte_but_wrong_key_errors() {
+    let json = r#"{"id":1,"name":"Alice","score":9.5,"nobody":"x"}"#;
+    assert!(matches!(DenyStrict::from_json_str(json), Err(jzon::Error::UnknownField)));
+}
+#[test]
+fn deny_unknown_valid_fields_ok() {
+    let v = DenyStrict::from_json_str(r#"{"id":7,"name":"Bob","score":4.2}"#).unwrap();
+    assert_eq!(v.id, 7);
+    assert_eq!(v.name, "Bob");
+    assert!((v.score - 4.2).abs() < 1e-9);
+}
+
+#[derive(FromJson, Debug, PartialEq)]
+struct SmallBitmask { a: u32, b: u32, c: u32 }
+#[test]
+fn small_bitmask_all_fields_present() {
+    let v = SmallBitmask::from_json_str(r#"{"a":1,"b":2,"c":3}"#).unwrap();
+    assert_eq!((v.a, v.b, v.c), (1, 2, 3));
+}
+#[test]
+fn small_bitmask_missing_field_errors() {
+    assert!(matches!(SmallBitmask::from_json_str(r#"{"a":1,"b":2}"#), Err(jzon::Error::MissingField(_))));
+}
+#[test]
+fn small_bitmask_out_of_order_ok() {
+    let v = SmallBitmask::from_json_str(r#"{"c":30,"a":10,"b":20}"#).unwrap();
+    assert_eq!((v.a, v.b, v.c), (10, 20, 30));
 }
