@@ -16,7 +16,7 @@ name: bench
       features:
         description: 'Cargo features (comma-separated)'
         type: string
-        default: 'simd,simd-intrinsics,zmij-float-ser'
+        default: 'simd,simd-intrinsics,fast-float,zmij-float-ser'
       filter:
         description: 'Criterion filter regex (empty = all)'
         type: string
