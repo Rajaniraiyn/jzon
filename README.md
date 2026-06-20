@@ -88,8 +88,10 @@ drop-in replacement).
 
 ## Benchmarks
 
-Up to **3.6× serde_json**, **2.4× sonic-rs**, **7.8× simd-json** on
-real-world workloads. <!-- bench:top-ser-start -->
+<!-- bench:speedups-start -->
+Up to **3.9× serde_json**, **2.4× sonic-rs**, **3.7× simd-json** on real-world workloads.
+<!-- bench:speedups-end -->
+<!-- bench:top-ser-start -->
 Top: **57.70 GiB/s** twitter serialize
 <!-- bench:top-ser-end -->.
 

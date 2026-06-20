@@ -562,6 +562,32 @@ jobs:
           echo "<!-- bench:h2h-end -->" >> BENCHMARKS.md
           echo "" >> BENCHMARKS.md
 
+          # Best observed jzon / competitor ratios across the generated H2H matrix.
+          # Missing competitor cells (for example simd-json serialization) are skipped.
+          BEST_SERDE_RATIO=0
+          BEST_SONIC_RATIO=0
+          BEST_SIMD_RATIO=0
+          for platform in "${PLATFORMS[@]}"; do
+            for group in "deserialize/twitter" "serialize/twitter" "deserialize/citm_catalog" "serialize/canada"; do
+              jzon_val="${DATA["${platform}:${group}/jzon"]:-—}"
+              [ "$jzon_val" = "—" ] && continue
+              jzon_mib=$(to_mib "$jzon_val")
+              for comp_pair in "serde_json:BEST_SERDE_RATIO" "sonic_rs:BEST_SONIC_RATIO" "simd_json:BEST_SIMD_RATIO"; do
+                comp="${comp_pair%%:*}"
+                ratio_var="${comp_pair##*:}"
+                comp_val="${DATA["${platform}:${group}/${comp}"]:-—}"
+                [ "$comp_val" = "—" ] && continue
+                comp_mib=$(to_mib "$comp_val")
+                ratio=$(awk "BEGIN{if ($comp_mib > 0) printf \"%.4f\", $jzon_mib / $comp_mib; else print 0}")
+                cur=$(eval echo "\$$ratio_var")
+                if awk "BEGIN{exit ($ratio > $cur) ? 0 : 1}"; then
+                  eval "$ratio_var=$ratio"
+                fi
+              done
+            done
+          done
+          SPEEDUP_LINE=$(awk "BEGIN{printf \"Up to **%.1f× serde_json**, **%.1f× sonic-rs**, **%.1f× simd-json** on real-world workloads.\", $BEST_SERDE_RATIO, $BEST_SONIC_RATIO, $BEST_SIMD_RATIO}")
+
           {
             echo "## Reproducing"
             echo ""
@@ -587,6 +613,10 @@ jobs:
 
           for readme in README.md crates/jzon/README.md; do
             [ -f "$readme" ] || continue
+            if grep -q '<!-- bench:speedups-start -->' "$readme" 2>/dev/null; then
+              replace_marker "$readme" "speedups" "$SPEEDUP_LINE"
+              echo "Updated speedups in $readme"
+            fi
             if grep -q '<!-- bench:headline-start -->' "$readme" 2>/dev/null; then
               replace_marker "$readme" "headline" "$HEADLINE_TABLE"
               echo "Updated headline in $readme"
