@@ -240,6 +240,144 @@ pub fn has_control_char(slice: &[u8]) -> bool {
     false
 }
 
+/// Scan `input[start..]` for the first `"`, `\`, or control byte (< 0x20).
+/// Returns `(stop_index, ascii_only)` where `ascii_only` is true iff every
+/// byte in `input[start..stop]` is ASCII (< 0x80).
+#[inline]
+pub fn scan_string_run(input: &[u8], start: usize) -> (usize, bool) {
+    #[cfg(all(feature = "simd-intrinsics", target_arch = "aarch64"))]
+    return crate::simd_arch::neon::scan_string_run_64(input, start);
+
+    #[cfg(all(feature = "simd-intrinsics", target_arch = "x86_64"))]
+    return crate::simd_arch::x86::scan_string_run_32(input, start);
+
+    #[cfg(all(
+        feature = "simd",
+        feature = "unstable",
+        not(any(
+            all(feature = "simd-intrinsics", target_arch = "aarch64"),
+            all(feature = "simd-intrinsics", target_arch = "x86_64"),
+        )),
+    ))]
+    return scan_string_run_simd32(input, start);
+
+    #[cfg(all(
+        feature = "simd",
+        not(feature = "unstable"),
+        not(any(
+            all(feature = "simd-intrinsics", target_arch = "aarch64"),
+            all(feature = "simd-intrinsics", target_arch = "x86_64"),
+        )),
+    ))]
+    return scan_string_run_simd16(input, start, true);
+
+    #[cfg(not(feature = "simd"))]
+    scan_string_run_scalar(input, start)
+}
+
+#[inline]
+pub fn scan_string_run_scalar(input: &[u8], start: usize) -> (usize, bool) {
+    let mut i = start;
+    let mut ascii_only = true;
+    const REPEAT: u64 = 0x2020_2020_2020_2020_u64;
+    const HIGH: u64 = 0x8080_8080_8080_8080_u64;
+
+    while i + 8 <= input.len() {
+        let chunk = u64::from_le_bytes(input[i..i + 8].try_into().unwrap());
+        let m = swar_has_byte(chunk, b'"')
+            | swar_has_byte(chunk, b'\\')
+            | (chunk.wrapping_sub(REPEAT) & !chunk & HIGH);
+        if m != 0 {
+            let mut j = i;
+            while j < i + 8 {
+                let b = input[j];
+                if b == b'"' || b == b'\\' || b < 0x20 {
+                    return (j, ascii_only);
+                }
+                if b >= 0x80 {
+                    ascii_only = false;
+                }
+                j += 1;
+            }
+        }
+        if (chunk & HIGH) != 0 {
+            ascii_only = false;
+        }
+        i += 8;
+    }
+
+    while i < input.len() {
+        let b = input[i];
+        if b == b'"' || b == b'\\' || b < 0x20 {
+            return (i, ascii_only);
+        }
+        if b >= 0x80 {
+            ascii_only = false;
+        }
+        i += 1;
+    }
+    (input.len(), ascii_only)
+}
+
+#[cfg(feature = "simd")]
+#[allow(dead_code)] // used when simd-intrinsics is off or as a non-x86/aarch64 fallback
+fn scan_string_run_simd16(input: &[u8], start: usize, mut ascii_only: bool) -> (usize, bool) {
+    let mut i = start;
+    const HIGH: u128 = 0x8080_8080_8080_8080_8080_8080_8080_8080_u128;
+
+    while i + 16 <= input.len() {
+        let chunk = {
+            let mut b = [0u8; 16];
+            b.copy_from_slice(&input[i..i + 16]);
+            u128::from_le_bytes(b)
+        };
+        let m = swar128_has_byte(chunk, b'"')
+            | swar128_has_byte(chunk, b'\\')
+            | swar128_has_ctrl(chunk);
+        if m != 0 {
+            let stop = i + (m.trailing_zeros() / 8) as usize;
+            return (stop, ascii_only && input[start..stop].iter().all(|&b| b.is_ascii()));
+        }
+        if (chunk & HIGH) != 0 {
+            ascii_only = false;
+        }
+        i += 16;
+    }
+
+    let (stop, tail_ascii) = scan_string_run_scalar(input, i);
+    (stop, ascii_only && tail_ascii)
+}
+
+#[cfg(all(feature = "simd", feature = "unstable"))]
+fn scan_string_run_simd32(input: &[u8], start: usize) -> (usize, bool) {
+    use std::simd::{cmp::SimdPartialEq, cmp::SimdPartialOrd, u8x32};
+
+    let quote = u8x32::splat(b'"');
+    let slash = u8x32::splat(b'\\');
+    let threshold = u8x32::splat(0x20u8);
+    let high = u8x32::splat(0x80u8);
+
+    let mut i = start;
+    let mut ascii_only = true;
+
+    while i + 32 <= input.len() {
+        let chunk = u8x32::from_slice(&input[i..i + 32]);
+        let needs_esc = chunk.simd_eq(quote)
+            | chunk.simd_eq(slash)
+            | chunk.simd_lt(threshold);
+        let mask = needs_esc.to_bitmask();
+        if mask != 0 {
+            let stop = i + mask.trailing_zeros() as usize;
+            return (stop, ascii_only && input[start..stop].iter().all(|&b| b.is_ascii()));
+        }
+        if (chunk.simd_ge(high).to_bitmask()) != 0 {
+            ascii_only = false;
+        }
+        i += 32;
+    }
+    scan_string_run_simd16(input, i, ascii_only)
+}
+
 /// Find the first byte needing JSON string escaping (`"`, `\`, or `< 0x20`).
 #[inline]
 pub fn find_escape(input: &[u8], start: usize) -> usize {

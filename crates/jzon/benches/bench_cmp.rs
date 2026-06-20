@@ -94,11 +94,11 @@ struct CitmCatalog {
 #[derive(serde::Serialize, serde::Deserialize, jzon::ToJson, jzon::FromJson, Clone, Default)]
 #[serde(default)]
 struct GeneratedRecord {
-    id:       u64,
-    name:     String,
-    score:    f64,
-    active:   bool,
-    tags:     Vec<String>,
+    id: u64,
+    name: String,
+    score: f64,
+    active: bool,
+    tags: Vec<String>,
     metadata: GeneratedMeta,
 }
 
@@ -111,7 +111,10 @@ struct GeneratedMeta {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, jzon::ToJson, jzon::FromJson, Clone)]
-struct Coord { x: f64, y: f64 }
+struct Coord {
+    x: f64,
+    y: f64,
+}
 
 #[derive(serde::Serialize, serde::Deserialize, jzon::ToJson, jzon::FromJson, Clone, Default)]
 #[serde(default)]
@@ -214,6 +217,15 @@ struct MixedRecord {
     active: bool,
     rank: i64,
 }
+#[derive(Serialize, Deserialize, ToJson, FromJson, Clone)]
+struct NumericRecord {
+    id: u64,
+    count: u64,
+    rank: i64,
+    score: f64,
+    ratio: f64,
+    active: bool,
+}
 static TINY_ARRAY: OnceLock<String> = OnceLock::new();
 fn tiny_array_json() -> &'static str {
     TINY_ARRAY.get_or_init(|| {
@@ -248,17 +260,33 @@ fn string_heavy_json() -> &'static str {
         s
     })
 }
-const DEEP_JSON: &str =
-    r#"{"a":{"b":{"c":{"d":{"e":{"f":42}}}}}}"#;
+const DEEP_JSON: &str = r#"{"a":{"b":{"c":{"d":{"e":{"f":42}}}}}}"#;
 static WIDE_JSON: OnceLock<String> = OnceLock::new();
 fn wide_json() -> &'static str {
     WIDE_JSON.get_or_init(|| {
         serde_json::to_string(&Wide {
-            f01: 1, f02: 2, f03: 3, f04: 4, f05: 5,
-            f06: 6, f07: 7, f08: 8.0, f09: 9.0, f10: 10.0,
-            f11: 11.0, f12: true, f13: false, f14: "hello".into(),
-            f15: "world".into(), f16: 16, f17: 17, f18: -18, f19: -19, f20: 20,
-        }).unwrap()
+            f01: 1,
+            f02: 2,
+            f03: 3,
+            f04: 4,
+            f05: 5,
+            f06: 6,
+            f07: 7,
+            f08: 8.0,
+            f09: 9.0,
+            f10: 10.0,
+            f11: 11.0,
+            f12: true,
+            f13: false,
+            f14: "hello".into(),
+            f15: "world".into(),
+            f16: 16,
+            f17: 17,
+            f18: -18,
+            f19: -19,
+            f20: 20,
+        })
+        .unwrap()
     })
 }
 static MIXED_ARRAY_JSON: OnceLock<String> = OnceLock::new();
@@ -277,6 +305,29 @@ fn mixed_array_json() -> &'static str {
                 (i as f64) * 0.5,
                 i % 2 == 0,
                 -(i as i64),
+            ));
+        }
+        s.push(']');
+        s
+    })
+}
+static NUMERIC_HEAVY_JSON: OnceLock<String> = OnceLock::new();
+fn numeric_heavy_json() -> &'static str {
+    NUMERIC_HEAVY_JSON.get_or_init(|| {
+        let mut s = String::with_capacity(64 * 1024);
+        s.push('[');
+        for i in 0u64..512 {
+            if i > 0 {
+                s.push(',');
+            }
+            s.push_str(&format!(
+                r#"{{"id":{},"count":{},"rank":{},"score":{:.6},"ratio":{:.9},"active":{}}}"#,
+                i,
+                i * 17,
+                -(i as i64),
+                (i as f64) * 1.125,
+                (i as f64 + 1.0) / 513.0,
+                i % 2 == 0,
             ));
         }
         s.push(']');
@@ -327,6 +378,22 @@ fn bench_twitter_deser(c: &mut Criterion) {
     });
     group.finish();
 }
+fn bench_twitter_typed_jzon(c: &mut Criterion) {
+    let input = read_data("twitter.json");
+    let bytes = input.len() as u64;
+    let mut group = c.benchmark_group("deserialize/twitter_typed_jzon");
+    group.sample_size(50);
+    group.warm_up_time(Duration::from_millis(500));
+    group.measurement_time(Duration::from_secs(2));
+    group.throughput(Throughput::Bytes(bytes));
+    group.bench_function("jzon/A", |b| {
+        b.iter(|| {
+            let result = TwitterData::from_json_str(black_box(&input)).unwrap();
+            black_box(result)
+        })
+    });
+    group.finish();
+}
 fn bench_twitter_ser(c: &mut Criterion) {
     let input = read_data("twitter.json");
     let val: TwitterData = serde_json::from_str(&input).unwrap();
@@ -342,9 +409,7 @@ fn bench_twitter_ser(c: &mut Criterion) {
     group.bench_function("sonic_rs", |b| {
         b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap())
     });
-    group.bench_function("jzon", |b| {
-        b.iter(|| black_box(&val).to_json_bytes())
-    });
+    group.bench_function("jzon", |b| b.iter(|| black_box(&val).to_json_bytes()));
     group.bench_function("jzon_serde", |b| {
         b.iter(|| black_box(jzon_serde::to_string(black_box(&val)).unwrap()))
     });
@@ -402,9 +467,7 @@ fn bench_canada_ser(c: &mut Criterion) {
     group.bench_function("sonic_rs", |b| {
         b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap())
     });
-    group.bench_function("jzon", |b| {
-        b.iter(|| black_box(&val).to_json_bytes())
-    });
+    group.bench_function("jzon", |b| b.iter(|| black_box(&val).to_json_bytes()));
     group.bench_function("jzon_serde", |b| {
         b.iter(|| black_box(jzon_serde::to_string(black_box(&val)).unwrap()))
     });
@@ -454,48 +517,75 @@ fn bench_micro_deser(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(4));
     group.throughput(Throughput::Bytes(point_json.len() as u64));
-    group.bench_with_input(BenchmarkId::new("serde_json", "Point"), point_json, |b, s| {
-        b.iter(|| serde_json::from_str::<Point>(black_box(s)).unwrap())
-    });
+    group.bench_with_input(
+        BenchmarkId::new("serde_json", "Point"),
+        point_json,
+        |b, s| b.iter(|| serde_json::from_str::<Point>(black_box(s)).unwrap()),
+    );
     group.bench_with_input(BenchmarkId::new("sonic_rs", "Point"), point_json, |b, s| {
         b.iter(|| sonic_rs::from_str::<Point>(black_box(s)).unwrap())
     });
-    group.bench_with_input(BenchmarkId::new("simd_json", "Point"), point_json, |b, s| {
-        b.iter(|| {
-            let mut buf = s.as_bytes().to_vec();
-            simd_json::from_slice::<Point>(black_box(&mut buf)).unwrap()
-        })
-    });
+    group.bench_with_input(
+        BenchmarkId::new("simd_json", "Point"),
+        point_json,
+        |b, s| {
+            b.iter(|| {
+                let mut buf = s.as_bytes().to_vec();
+                simd_json::from_slice::<Point>(black_box(&mut buf)).unwrap()
+            })
+        },
+    );
     group.bench_with_input(BenchmarkId::new("jzon", "Point"), point_json, |b, s| {
         b.iter(|| Point::from_json_str(black_box(s)).unwrap())
     });
-    group.bench_with_input(BenchmarkId::new("jzon_serde", "Point"), point_json, |b, s| {
-        b.iter(|| black_box(jzon_serde::from_str::<Point>(black_box(s)).unwrap()))
-    });
+    group.bench_with_input(
+        BenchmarkId::new("jzon_serde", "Point"),
+        point_json,
+        |b, s| b.iter(|| black_box(jzon_serde::from_str::<Point>(black_box(s)).unwrap())),
+    );
     group.throughput(Throughput::Bytes(record_json.len() as u64));
-    group.bench_with_input(BenchmarkId::new("serde_json", "Record"), record_json, |b, s| {
-        b.iter(|| serde_json::from_str::<Record>(black_box(s)).unwrap())
-    });
-    group.bench_with_input(BenchmarkId::new("sonic_rs", "Record"), record_json, |b, s| {
-        b.iter(|| sonic_rs::from_str::<Record>(black_box(s)).unwrap())
-    });
-    group.bench_with_input(BenchmarkId::new("simd_json", "Record"), record_json, |b, s| {
-        b.iter(|| {
-            let mut buf = s.as_bytes().to_vec();
-            simd_json::from_slice::<Record>(black_box(&mut buf)).unwrap()
-        })
-    });
+    group.bench_with_input(
+        BenchmarkId::new("serde_json", "Record"),
+        record_json,
+        |b, s| b.iter(|| serde_json::from_str::<Record>(black_box(s)).unwrap()),
+    );
+    group.bench_with_input(
+        BenchmarkId::new("sonic_rs", "Record"),
+        record_json,
+        |b, s| b.iter(|| sonic_rs::from_str::<Record>(black_box(s)).unwrap()),
+    );
+    group.bench_with_input(
+        BenchmarkId::new("simd_json", "Record"),
+        record_json,
+        |b, s| {
+            b.iter(|| {
+                let mut buf = s.as_bytes().to_vec();
+                simd_json::from_slice::<Record>(black_box(&mut buf)).unwrap()
+            })
+        },
+    );
     group.bench_with_input(BenchmarkId::new("jzon", "Record"), record_json, |b, s| {
         b.iter(|| Record::from_json_str(black_box(s)).unwrap())
     });
-    group.bench_with_input(BenchmarkId::new("jzon_serde", "Record"), record_json, |b, s| {
-        b.iter(|| black_box(jzon_serde::from_str::<Record>(black_box(s)).unwrap()))
-    });
+    group.bench_with_input(
+        BenchmarkId::new("jzon_serde", "Record"),
+        record_json,
+        |b, s| b.iter(|| black_box(jzon_serde::from_str::<Record>(black_box(s)).unwrap())),
+    );
     group.finish();
 }
 fn bench_micro_ser(c: &mut Criterion) {
-    let point = Point { x: 1.5, y: 2.7, z: -0.3 };
-    let record = Record { id: 42, value: 3.14, label: "hello".to_string(), active: true };
+    let point = Point {
+        x: 1.5,
+        y: 2.7,
+        z: -0.3,
+    };
+    let record = Record {
+        id: 42,
+        value: 3.14,
+        label: "hello".to_string(),
+        active: true,
+    };
     let point_json = serde_json::to_string(&point).unwrap();
     let record_json = serde_json::to_string(&record).unwrap();
 
@@ -643,9 +733,7 @@ fn bench_string_heavy(c: &mut Criterion) {
         group.bench_function("sonic_rs", |b| {
             b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap())
         });
-        group.bench_function("jzon", |b| {
-            b.iter(|| black_box(&val).to_json_bytes())
-        });
+        group.bench_function("jzon", |b| b.iter(|| black_box(&val).to_json_bytes()));
         group.bench_function("jzon_serde", |b| {
             b.iter(|| black_box(jzon_serde::to_string(black_box(&val)).unwrap()))
         });
@@ -717,9 +805,7 @@ fn bench_wide_struct(c: &mut Criterion) {
         group.bench_function("sonic_rs", |b| {
             b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap())
         });
-        group.bench_function("jzon", |b| {
-            b.iter(|| black_box(&val).to_json_bytes())
-        });
+        group.bench_function("jzon", |b| b.iter(|| black_box(&val).to_json_bytes()));
         group.finish();
     }
 }
@@ -770,9 +856,7 @@ fn bench_mixed_array(c: &mut Criterion) {
         group.bench_function("sonic_rs", |b| {
             b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap())
         });
-        group.bench_function("jzon", |b| {
-            b.iter(|| black_box(&val).to_json_bytes())
-        });
+        group.bench_function("jzon", |b| b.iter(|| black_box(&val).to_json_bytes()));
         group.bench_function("jzon_serde", |b| {
             b.iter(|| black_box(jzon_serde::to_string(black_box(&val)).unwrap()))
         });
@@ -856,7 +940,11 @@ fn bench_zero_copy(c: &mut Criterion) {
 fn bench_fixed_buf(c: &mut Criterion) {
     use jzon::ToJsonExt;
 
-    let p = Point { x: 1.5, y: -2.0, z: 3.14 };
+    let p = Point {
+        x: 1.5,
+        y: -2.0,
+        z: 3.14,
+    };
     let expected_len = p.to_json_bytes().len();
 
     let mut g = c.benchmark_group("serialize/fixed_buf");
@@ -899,7 +987,9 @@ fn bench_hashmap(c: &mut Criterion) {
     let input = HASHMAP_JSON.get_or_init(|| {
         let mut s = String::from("{");
         for i in 0u32..200 {
-            if i > 0 { s.push(','); }
+            if i > 0 {
+                s.push(',');
+            }
             s.push_str(&format!(r#""key_{i:04}":"value_lorem_ipsum_{i:06}""#));
         }
         s.push('}');
@@ -920,13 +1010,28 @@ fn bench_hashmap(c: &mut Criterion) {
         })
     });
     g.bench_function("jzon/B", |b| {
-        b.iter(|| black_box(jzon_serde::from_str::<std::collections::HashMap<String, String>>(black_box(input)).unwrap()))
+        b.iter(|| {
+            black_box(
+                jzon_serde::from_str::<std::collections::HashMap<String, String>>(black_box(input))
+                    .unwrap(),
+            )
+        })
     });
     g.bench_function("serde_json", |b| {
-        b.iter(|| black_box(serde_json::from_str::<std::collections::HashMap<String, String>>(black_box(input)).unwrap()))
+        b.iter(|| {
+            black_box(
+                serde_json::from_str::<std::collections::HashMap<String, String>>(black_box(input))
+                    .unwrap(),
+            )
+        })
     });
     g.bench_function("sonic_rs", |b| {
-        b.iter(|| black_box(sonic_rs::from_str::<std::collections::HashMap<String, String>>(black_box(input)).unwrap()))
+        b.iter(|| {
+            black_box(
+                sonic_rs::from_str::<std::collections::HashMap<String, String>>(black_box(input))
+                    .unwrap(),
+            )
+        })
     });
     g.finish();
 
@@ -937,9 +1042,15 @@ fn bench_hashmap(c: &mut Criterion) {
     g2.warm_up_time(Duration::from_secs(1));
     g2.measurement_time(Duration::from_secs(4));
     g2.bench_function("jzon/A", |b| b.iter(|| black_box(map.to_json_bytes())));
-    g2.bench_function("jzon/B", |b| b.iter(|| black_box(jzon_serde::to_string(&map).unwrap())));
-    g2.bench_function("serde_json", |b| b.iter(|| black_box(serde_json::to_string(&map).unwrap())));
-    g2.bench_function("sonic_rs", |b| b.iter(|| black_box(sonic_rs::to_string(&map).unwrap())));
+    g2.bench_function("jzon/B", |b| {
+        b.iter(|| black_box(jzon_serde::to_string(&map).unwrap()))
+    });
+    g2.bench_function("serde_json", |b| {
+        b.iter(|| black_box(serde_json::to_string(&map).unwrap()))
+    });
+    g2.bench_function("sonic_rs", |b| {
+        b.iter(|| black_box(sonic_rs::to_string(&map).unwrap()))
+    });
     g2.finish();
 }
 fn bench_enum_variants(c: &mut Criterion) {
@@ -947,11 +1058,25 @@ fn bench_enum_variants(c: &mut Criterion) {
     let input = ENUM_JSON.get_or_init(|| {
         let mut s = String::from("[");
         for i in 0u32..1000 {
-            if i > 0 { s.push(','); }
+            if i > 0 {
+                s.push(',');
+            }
             match i % 3 {
-                0 => s.push_str(&format!(r#"{{"type":"Circle","radius":{:.4}}}"#, (i as f64) * 0.1)),
-                1 => s.push_str(&format!(r#"{{"type":"Rectangle","width":{:.3},"height":{:.3}}}"#, i as f64, (i + 1) as f64)),
-                _ => s.push_str(&format!(r#"{{"type":"Triangle","base":{:.3},"height":{:.3},"area":{:.6}}}"#, i as f64, (i + 1) as f64, (i as f64) * (i + 1) as f64 * 0.5)),
+                0 => s.push_str(&format!(
+                    r#"{{"type":"Circle","radius":{:.4}}}"#,
+                    (i as f64) * 0.1
+                )),
+                1 => s.push_str(&format!(
+                    r#"{{"type":"Rectangle","width":{:.3},"height":{:.3}}}"#,
+                    i as f64,
+                    (i + 1) as f64
+                )),
+                _ => s.push_str(&format!(
+                    r#"{{"type":"Triangle","base":{:.3},"height":{:.3},"area":{:.6}}}"#,
+                    i as f64,
+                    (i + 1) as f64,
+                    (i as f64) * (i + 1) as f64 * 0.5
+                )),
             }
         }
         s.push(']');
@@ -982,10 +1107,86 @@ fn bench_enum_variants(c: &mut Criterion) {
     g2.warm_up_time(Duration::from_secs(1));
     g2.measurement_time(Duration::from_secs(4));
     g2.bench_function("jzon/A", |b| b.iter(|| black_box(shapes.to_json_bytes())));
-    g2.bench_function("jzon/B", |b| b.iter(|| black_box(jzon_serde::to_string(&shapes).unwrap())));
-    g2.bench_function("serde_json", |b| b.iter(|| black_box(serde_json::to_string(&shapes).unwrap())));
-    g2.bench_function("sonic_rs", |b| b.iter(|| black_box(sonic_rs::to_string(&shapes).unwrap())));
+    g2.bench_function("jzon/B", |b| {
+        b.iter(|| black_box(jzon_serde::to_string(&shapes).unwrap()))
+    });
+    g2.bench_function("serde_json", |b| {
+        b.iter(|| black_box(serde_json::to_string(&shapes).unwrap()))
+    });
+    g2.bench_function("sonic_rs", |b| {
+        b.iter(|| black_box(sonic_rs::to_string(&shapes).unwrap()))
+    });
     g2.finish();
+}
+
+fn bench_serde_adapter_numeric_heavy(c: &mut Criterion) {
+    let input = numeric_heavy_json();
+    let bytes = input.len() as u64;
+
+    {
+        let mut g = c.benchmark_group("deserialize/serde_adapter_numeric_heavy");
+        g.throughput(Throughput::Bytes(bytes));
+        g.sample_size(100);
+        g.warm_up_time(Duration::from_millis(500));
+        g.measurement_time(Duration::from_secs(3));
+        g.bench_function("jzon/A", |b| {
+            b.iter(|| black_box(Vec::<NumericRecord>::from_json_str(black_box(input)).unwrap()))
+        });
+        g.bench_function("jzon/B", |b| {
+            b.iter(|| {
+                black_box(jzon_serde::from_str::<Vec<NumericRecord>>(black_box(input)).unwrap())
+            })
+        });
+        g.bench_function("serde_json", |b| {
+            b.iter(|| {
+                black_box(serde_json::from_str::<Vec<NumericRecord>>(black_box(input)).unwrap())
+            })
+        });
+        g.bench_function("sonic_rs", |b| {
+            b.iter(|| {
+                black_box(sonic_rs::from_str::<Vec<NumericRecord>>(black_box(input)).unwrap())
+            })
+        });
+        g.finish();
+    }
+
+    {
+        let val: Vec<NumericRecord> = serde_json::from_str(input).unwrap();
+        let mut g = c.benchmark_group("serialize/serde_adapter_numeric_heavy");
+        g.throughput(Throughput::Bytes(bytes));
+        g.sample_size(100);
+        g.warm_up_time(Duration::from_millis(500));
+        g.measurement_time(Duration::from_secs(3));
+        g.bench_function("jzon/A/to_json_bytes", |b| {
+            b.iter(|| black_box(val.to_json_bytes()))
+        });
+        g.bench_function("jzon/B/to_string", |b| {
+            b.iter(|| black_box(jzon_serde::to_string(black_box(&val)).unwrap()))
+        });
+        g.bench_function("jzon/B/to_writer", |b| {
+            let mut buf = Vec::with_capacity(input.len());
+            b.iter(|| {
+                buf.clear();
+                jzon_serde::to_writer(&mut buf, black_box(&val)).unwrap();
+                black_box(buf.len())
+            })
+        });
+        g.bench_function("serde_json/to_string", |b| {
+            b.iter(|| black_box(serde_json::to_string(black_box(&val)).unwrap()))
+        });
+        g.bench_function("serde_json/to_writer", |b| {
+            let mut buf = Vec::with_capacity(input.len());
+            b.iter(|| {
+                buf.clear();
+                serde_json::to_writer(&mut buf, black_box(&val)).unwrap();
+                black_box(buf.len())
+            })
+        });
+        g.bench_function("sonic_rs/to_string", |b| {
+            b.iter(|| black_box(sonic_rs::to_string(black_box(&val)).unwrap()))
+        });
+        g.finish();
+    }
 }
 
 fn bench_generated_50k(c: &mut Criterion) {
@@ -1022,10 +1223,16 @@ fn bench_generated_50k(c: &mut Criterion) {
         g.warm_up_time(Duration::from_millis(500));
         g.measurement_time(Duration::from_secs(4));
 
-        g.bench_function("serde_json", |b| b.iter(|| serde_json::to_string(black_box(&val)).unwrap()));
-        g.bench_function("sonic_rs",   |b| b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap()));
-        g.bench_function("jzon/A",     |b| b.iter(|| black_box(&val).to_json_bytes()));
-        g.bench_function("jzon/B",     |b| b.iter(|| jzon_serde::to_string(black_box(&val)).unwrap()));
+        g.bench_function("serde_json", |b| {
+            b.iter(|| serde_json::to_string(black_box(&val)).unwrap())
+        });
+        g.bench_function("sonic_rs", |b| {
+            b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap())
+        });
+        g.bench_function("jzon/A", |b| b.iter(|| black_box(&val).to_json_bytes()));
+        g.bench_function("jzon/B", |b| {
+            b.iter(|| jzon_serde::to_string(black_box(&val)).unwrap())
+        });
         g.finish();
     }
 }
@@ -1065,10 +1272,18 @@ fn bench_mixed_2mb(c: &mut Criterion) {
         g.warm_up_time(Duration::from_secs(1));
         g.measurement_time(Duration::from_secs(5));
 
-        g.bench_function("serde_json", |b| b.iter(|| serde_json::to_string(black_box(&val)).unwrap()));
-        g.bench_function("sonic_rs",   |b| b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap()));
-        g.bench_function("jzon/B",     |b| b.iter(|| jzon_serde::to_string(black_box(&val)).unwrap()));
-        g.bench_function("jzon/A",     |b| b.iter(|| black_box(&typed_val).to_json_bytes()));
+        g.bench_function("serde_json", |b| {
+            b.iter(|| serde_json::to_string(black_box(&val)).unwrap())
+        });
+        g.bench_function("sonic_rs", |b| {
+            b.iter(|| sonic_rs::to_string(black_box(&val)).unwrap())
+        });
+        g.bench_function("jzon/B", |b| {
+            b.iter(|| jzon_serde::to_string(black_box(&val)).unwrap())
+        });
+        g.bench_function("jzon/A", |b| {
+            b.iter(|| black_box(&typed_val).to_json_bytes())
+        });
         g.finish();
     }
 }
@@ -1076,6 +1291,7 @@ fn bench_mixed_2mb(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_twitter_deser,
+    bench_twitter_typed_jzon,
     bench_twitter_ser,
     bench_canada_deser,
     bench_canada_ser,
@@ -1092,6 +1308,7 @@ criterion_group!(
     bench_fixed_buf,
     bench_hashmap,
     bench_enum_variants,
+    bench_serde_adapter_numeric_heavy,
     bench_generated_50k,
     bench_mixed_2mb,
 );

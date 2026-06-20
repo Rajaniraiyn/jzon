@@ -46,6 +46,14 @@ harness = false
 name    = "bench_simd"
 harness = false
 
+[[bench]]
+name    = "bench_scanner"
+harness = false
+
+[[bench]]
+name    = "bench_derive_dispatch"
+harness = false
+
 [[test]]
 name = "large_data"
 

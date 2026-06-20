@@ -31,10 +31,11 @@
 //! matches the struct definition — the common case — almost every key dispatch
 //! is O(1) without hashing.
 //!
-//! ## Safe Rust only
+//! ## Minimal audited unsafe
 //!
-//! There are **no `unsafe` blocks** in this crate.  All SIMD scanning uses
-//! `std::simd` (nightly) or pure u64/u128 arithmetic (SWAR).
+//! Most of the crate is safe Rust.  The small unsafe surface is limited to
+//! architecture-specific SIMD kernels and `from_utf8_unchecked` after the
+//! scanner has proven a string run is ASCII-only.
 //!
 //! # Quick start
 //!
@@ -73,7 +74,7 @@ pub mod stats;
 
 pub use error::Error;
 pub use scanner::{JsonStr, Scanner};
-pub use ser::ToJson;
+pub use ser::{IoSink, JsonSink, LengthCounter, ToJson, VecSink};
 pub use de::FromJson;
 pub use fixed::{FixedBuf, ToJsonExt, json_str_len};
 

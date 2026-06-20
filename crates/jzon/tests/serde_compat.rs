@@ -13,8 +13,10 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 
 use jzon_serde::{from_slice, from_str, to_string};
+use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 
 // ---- helper ----------------------------------------------------------------
 
@@ -133,6 +135,116 @@ fn de_u64() {
     assert_eq!(from_str::<u64>("3").unwrap(), 3);
     assert_eq!(from_str::<u64>("1234").unwrap(), 1234);
     assert_eq!(from_str::<u64>(&u64::MAX.to_string()).unwrap(), u64::MAX);
+}
+
+#[test]
+fn de_integer_narrowing_rejects_out_of_range_values() {
+    assert_eq!(from_str::<u8>("255").unwrap(), u8::MAX);
+    assert!(from_str::<u8>("256").is_err());
+
+    assert_eq!(from_str::<i8>("-128").unwrap(), i8::MIN);
+    assert_eq!(from_str::<i8>("127").unwrap(), i8::MAX);
+    assert!(from_str::<i8>("-129").is_err());
+    assert!(from_str::<i8>("128").is_err());
+}
+
+#[test]
+fn de_integer_extreme_bounds_match_target_types() {
+    assert_eq!(from_str::<u64>(&u64::MAX.to_string()).unwrap(), u64::MAX);
+    assert!(from_str::<u64>("18446744073709551616").is_err());
+
+    assert_eq!(from_str::<i64>(&i64::MIN.to_string()).unwrap(), i64::MIN);
+    assert_eq!(from_str::<i64>(&i64::MAX.to_string()).unwrap(), i64::MAX);
+    assert!(from_str::<i64>("-9223372036854775809").is_err());
+    assert!(from_str::<i64>("9223372036854775808").is_err());
+}
+
+#[test]
+fn de_integer_128_bit_bounds_match_target_types() {
+    assert_eq!(from_str::<u128>(&u128::MAX.to_string()).unwrap(), u128::MAX);
+    assert!(from_str::<u128>("340282366920938463463374607431768211456").is_err());
+
+    assert_eq!(from_str::<i128>(&i128::MIN.to_string()).unwrap(), i128::MIN);
+    assert_eq!(from_str::<i128>(&i128::MAX.to_string()).unwrap(), i128::MAX);
+    assert!(from_str::<i128>("-170141183460469231731687303715884105729").is_err());
+    assert!(from_str::<i128>("170141183460469231731687303715884105728").is_err());
+}
+
+#[derive(Debug, PartialEq)]
+enum AnyNumberKind {
+    I64(i64),
+    U64(u64),
+    F64(f64),
+}
+
+struct AnyNumberVisitor;
+
+impl<'de> Visitor<'de> for AnyNumberVisitor {
+    type Value = AnyNumberKind;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON number")
+    }
+
+    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(AnyNumberKind::I64(v))
+    }
+
+    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(AnyNumberKind::U64(v))
+    }
+
+    fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(AnyNumberKind::F64(v))
+    }
+}
+
+impl<'de> Deserialize<'de> for AnyNumberKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(AnyNumberVisitor)
+    }
+}
+
+#[test]
+fn de_any_number_routes_to_expected_visitor_kinds() {
+    assert_eq!(from_str::<AnyNumberKind>("-42").unwrap(), AnyNumberKind::I64(-42));
+    assert_eq!(from_str::<AnyNumberKind>("0").unwrap(), AnyNumberKind::U64(0));
+    assert_eq!(from_str::<AnyNumberKind>("42").unwrap(), AnyNumberKind::U64(42));
+    assert_eq!(
+        from_str::<AnyNumberKind>("1.5").unwrap(),
+        AnyNumberKind::F64(1.5)
+    );
+    assert!((match from_str::<AnyNumberKind>("1e5").unwrap() {
+        AnyNumberKind::F64(v) => v,
+        other => panic!("expected f64 visitor, got {other:?}"),
+    } - 1e5).abs() < 1.0);
+    assert!(from_str::<AnyNumberKind>("18446744073709551616").is_err());
+}
+
+#[test]
+fn de_integer_targets_reject_float_syntax() {
+    assert!(from_str::<i64>("1e5").is_err());
+    assert!(from_str::<i64>("3.14").is_err());
+    assert!(from_str::<u64>("3.14").is_err());
+    assert!(from_str::<u64>("1e5").is_err());
+}
+
+#[test]
+fn de_unsigned_integer_targets_reject_negative_numbers() {
+    assert!(from_str::<u64>("-1").is_err());
+    assert!(from_str::<u8>("-1").is_err());
 }
 
 #[test]

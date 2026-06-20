@@ -259,19 +259,18 @@ impl<'de> Scanner<'de> {
         self.skip_whitespace();
         self.expect_byte(b'"')?;
         let start = self.pos;
-        #[cfg(feature = "simd-intrinsics")]
-        let stop = simd::find_escape(self.input, start);
-        #[cfg(not(feature = "simd-intrinsics"))]
-        let stop = simd::find(self.input, start);
+        let (stop, ascii_only) = simd::scan_string_run(self.input, start);
 
         match self.input.get(stop) {
             Some(&b'"') => {
-                #[cfg(not(feature = "simd-intrinsics"))]
-                if simd::has_control_char(&self.input[start..stop]) {
-                    return Err(Error::InvalidEscape);
-                }
-                let s = core::str::from_utf8(&self.input[start..stop])
-                    .map_err(|_| Error::InvalidUtf8)?;
+                let s = if ascii_only {
+                    // SAFETY: fused scan proved every byte in [start..stop) is ASCII (< 0x80),
+                    // which is always valid UTF-8.
+                    unsafe { core::str::from_utf8_unchecked(&self.input[start..stop]) }
+                } else {
+                    core::str::from_utf8(&self.input[start..stop])
+                        .map_err(|_| Error::InvalidUtf8)?
+                };
                 self.pos = stop + 1;
 
                 #[cfg(feature = "stats")]
@@ -446,17 +445,20 @@ impl<'de> Scanner<'de> {
     fn skip_string(&mut self) -> Result<(), Error> {
         self.expect_byte(b'"')?;
         loop {
-            match self.input.get(self.pos) {
+            let stop = simd::find(self.input, self.pos);
+            match self.input.get(stop) {
                 Some(&b'"') => {
-                    self.pos += 1;
+                    self.pos = stop + 1;
                     return Ok(());
                 }
                 Some(&b'\\') => {
-                    self.pos += 2;
+                    let escaped = stop + 1;
+                    if escaped >= self.input.len() {
+                        return Err(err_eof());
+                    }
+                    self.pos = escaped + 1;
                 }
-                Some(_) => {
-                    self.pos += 1;
-                }
+                Some(_) => unreachable!("simd::find only stops at quote or backslash"),
                 None => return Err(err_eof()),
             }
         }
