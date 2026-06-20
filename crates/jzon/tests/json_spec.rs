@@ -387,6 +387,30 @@ fn num_scientific_notation_positive_exponent_sign() {
     assert!((n - 2500.0).abs() < 1e-9);
 }
 
+// spec: numbers/exponent-requires-digit
+#[test]
+fn num_exponent_marker_requires_digit_lower_e() {
+    assert!(parse("1e").is_err());
+}
+
+// spec: numbers/exponent-requires-digit
+#[test]
+fn num_exponent_marker_requires_digit_upper_e() {
+    assert!(parse("1E").is_err());
+}
+
+// spec: numbers/exponent-requires-digit
+#[test]
+fn num_positive_exponent_sign_requires_digit() {
+    assert!(parse("1e+").is_err());
+}
+
+// spec: numbers/exponent-requires-digit
+#[test]
+fn num_negative_exponent_sign_requires_digit() {
+    assert!(parse("1e-").is_err());
+}
+
 // spec: numbers/large
 #[test]
 fn num_large_integer() {
