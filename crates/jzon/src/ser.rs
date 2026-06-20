@@ -165,16 +165,25 @@ impl<T: ToJson> ToJson for Option<T> {
     }
 }
 
+#[inline]
+fn write_json_array_iter<'a, T, I>(items: I, w: &mut Vec<u8>)
+where
+    T: ToJson + 'a,
+    I: IntoIterator<Item = &'a T>,
+{
+    w.push(b'[');
+    let mut first = true;
+    for item in items {
+        if !first { w.push(b','); }
+        item.json_write(w);
+        first = false;
+    }
+    w.push(b']');
+}
+
 impl<T: ToJson> ToJson for Vec<T> {
     fn json_write(&self, w: &mut Vec<u8>) {
-        w.push(b'[');
-        let mut first = true;
-        for item in self {
-            if !first { w.push(b','); }
-            item.json_write(w);
-            first = false;
-        }
-        w.push(b']');
+        write_json_array_iter(self, w);
     }
     #[inline]
     fn json_size_hint(&self) -> usize {
@@ -186,14 +195,7 @@ impl<T: ToJson> ToJson for Vec<T> {
 
 impl<T: ToJson, const N: usize> ToJson for [T; N] {
     fn json_write(&self, w: &mut Vec<u8>) {
-        w.push(b'[');
-        let mut first = true;
-        for item in self {
-            if !first { w.push(b','); }
-            item.json_write(w);
-            first = false;
-        }
-        w.push(b']');
+        write_json_array_iter(self, w);
     }
     #[inline]
     fn json_size_hint(&self) -> usize {
@@ -204,14 +206,7 @@ impl<T: ToJson, const N: usize> ToJson for [T; N] {
 
 impl<T: ToJson> ToJson for [T] {
     fn json_write(&self, w: &mut Vec<u8>) {
-        w.push(b'[');
-        let mut first = true;
-        for item in self {
-            if !first { w.push(b','); }
-            item.json_write(w);
-            first = false;
-        }
-        w.push(b']');
+        write_json_array_iter(self, w);
     }
     #[inline]
     fn json_size_hint(&self) -> usize {
