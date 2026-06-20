@@ -18,8 +18,11 @@ fn basic_roundtrip() {
 fn basic_serialize_shape() {
     let p = Point { x: 1.5, y: -2.5 };
     let json = p.to_json_string();
-    assert!(json.contains("1.5") && json.contains("-2.5"),
-        "unexpected json: {}", json);
+    assert!(
+        json.contains("1.5") && json.contains("-2.5"),
+        "unexpected json: {}",
+        json
+    );
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 struct AllPrimitives {
@@ -37,7 +40,19 @@ struct AllPrimitives {
 }
 #[test]
 fn all_primitives_roundtrip() {
-    let v = AllPrimitives { a: 1, b: 2, c: 3, d: 4, e: -1, f: -2, g: -3, h: -4, fi: 1.5, fj: 2.5, flag: true };
+    let v = AllPrimitives {
+        a: 1,
+        b: 2,
+        c: 3,
+        d: 4,
+        e: -1,
+        f: -2,
+        g: -3,
+        h: -4,
+        fi: 1.5,
+        fj: 2.5,
+        flag: true,
+    };
     let json = v.to_json_string();
     let v2 = AllPrimitives::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -49,14 +64,17 @@ struct OwnedStrings {
 }
 #[test]
 fn owned_strings_roundtrip() {
-    let v = OwnedStrings { name: "hello".into(), tag: "world".into() };
+    let v = OwnedStrings {
+        name: "hello".into(),
+        tag: "world".into(),
+    };
     let json = v.to_json_string();
     let v2 = OwnedStrings::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
 #[derive(ToJson, FromJson, Debug)]
 struct Borrowed<'a> {
-    id:   u64,
+    id: u64,
     name: &'a str,
 }
 #[test]
@@ -74,11 +92,17 @@ fn escaped_string_rejects_borrow() {
     // JSON string with a \n escape — can't zero-copy borrow a &str.
     let input = "{\"id\":1,\"name\":\"ali\\nce\"}";
     let result = Borrowed::from_json_str(input);
-    assert!(matches!(result, Err(jzon::Error::EscapedString)), "got: {result:?}");
+    assert!(
+        matches!(result, Err(jzon::Error::EscapedString)),
+        "got: {result:?}"
+    );
 }
 #[test]
 fn owned_string_with_escapes() {
-    let v = OwnedStrings { name: "say \"hi\"".into(), tag: "line\nnewline".into() };
+    let v = OwnedStrings {
+        name: "say \"hi\"".into(),
+        tag: "line\nnewline".into(),
+    };
     let json = v.to_json_string();
     let v2 = OwnedStrings::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -86,12 +110,15 @@ fn owned_string_with_escapes() {
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct CamelUser {
-    user_id:   u64,
+    user_id: u64,
     first_name: String,
 }
 #[test]
 fn rename_all_camel_serialize() {
-    let u = CamelUser { user_id: 7, first_name: "Bob".into() };
+    let u = CamelUser {
+        user_id: 7,
+        first_name: "Bob".into(),
+    };
     let json = u.to_json_string();
     assert!(json.contains("userId"), "got: {json}");
     assert!(json.contains("firstName"), "got: {json}");
@@ -111,9 +138,15 @@ struct PascalPoint {
 }
 #[test]
 fn rename_all_pascal() {
-    let p = PascalPoint { x_coord: 1.0, y_coord: 2.0 };
+    let p = PascalPoint {
+        x_coord: 1.0,
+        y_coord: 2.0,
+    };
     let json = p.to_json_string();
-    assert!(json.contains("XCoord") && json.contains("YCoord"), "got: {json}");
+    assert!(
+        json.contains("XCoord") && json.contains("YCoord"),
+        "got: {json}"
+    );
     let p2 = PascalPoint::from_json_str(&json).unwrap();
     assert_eq!(p, p2);
 }
@@ -125,9 +158,15 @@ struct ScreamPoint {
 }
 #[test]
 fn rename_all_screaming_snake() {
-    let p = ScreamPoint { x_coord: 1.0, y_coord: 2.0 };
+    let p = ScreamPoint {
+        x_coord: 1.0,
+        y_coord: 2.0,
+    };
     let json = p.to_json_string();
-    assert!(json.contains("X_COORD") && json.contains("Y_COORD"), "got: {json}");
+    assert!(
+        json.contains("X_COORD") && json.contains("Y_COORD"),
+        "got: {json}"
+    );
     let p2 = ScreamPoint::from_json_str(&json).unwrap();
     assert_eq!(p, p2);
 }
@@ -139,9 +178,15 @@ struct KebabPoint {
 }
 #[test]
 fn rename_all_kebab() {
-    let p = KebabPoint { x_coord: 1.0, y_coord: 2.0 };
+    let p = KebabPoint {
+        x_coord: 1.0,
+        y_coord: 2.0,
+    };
     let json = p.to_json_string();
-    assert!(json.contains("x-coord") && json.contains("y-coord"), "got: {json}");
+    assert!(
+        json.contains("x-coord") && json.contains("y-coord"),
+        "got: {json}"
+    );
     let p2 = KebabPoint::from_json_str(&json).unwrap();
     assert_eq!(p, p2);
 }
@@ -154,9 +199,15 @@ struct Renamed {
 }
 #[test]
 fn field_rename() {
-    let r = Renamed { name: "Alice".into(), age: 30 };
+    let r = Renamed {
+        name: "Alice".into(),
+        age: 30,
+    };
     let json = r.to_json_string();
-    assert!(json.contains("fullName") && json.contains("yearsOld"), "got: {json}");
+    assert!(
+        json.contains("fullName") && json.contains("yearsOld"),
+        "got: {json}"
+    );
     let r2 = Renamed::from_json_str(&json).unwrap();
     assert_eq!(r, r2);
 }
@@ -168,7 +219,10 @@ struct WithSkip {
 }
 #[test]
 fn skip_omits_field() {
-    let v = WithSkip { visible: 1, internal: 999 };
+    let v = WithSkip {
+        visible: 1,
+        internal: 999,
+    };
     let json = v.to_json_string();
     assert!(!json.contains("internal"), "got: {json}");
     let v2 = WithSkip::from_json_str(&json).unwrap();
@@ -183,7 +237,10 @@ struct SkipSer {
 }
 #[test]
 fn skip_serializing() {
-    let v = SkipSer { value: 5, cached: "ignored".into() };
+    let v = SkipSer {
+        value: 5,
+        cached: "ignored".into(),
+    };
     let json = v.to_json_string();
     assert!(!json.contains("cached"), "got: {json}");
     let v2 = SkipSer::from_json_str(&json).unwrap();
@@ -217,12 +274,171 @@ fn skip_serializing_if_none() {
 }
 #[test]
 fn skip_serializing_if_some_included() {
-    let v = SkipIf { id: 2, note: Some("hi".into()) };
+    let v = SkipIf {
+        id: 2,
+        note: Some("hi".into()),
+    };
     let json = v.to_json_string();
     assert!(json.contains("note"), "got: {json}");
     let v2 = SkipIf::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
+
+// ── skip_serializing_if comma / size-hint regressions (Task 3) ───────────────
+
+#[derive(ToJson, FromJson, Debug, PartialEq)]
+struct SkipIfFirst {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prefix: Option<u32>,
+    id: u32,
+}
+
+#[derive(ToJson, FromJson, Debug, PartialEq)]
+struct SkipIfMiddle {
+    id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    middle: Option<String>,
+    tail: String,
+}
+
+#[derive(ToJson, FromJson, Debug, PartialEq)]
+struct SkipIfAllConditional {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    a: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    b: Option<String>,
+}
+
+#[test]
+fn skip_serializing_if_first_skipped_no_leading_comma() {
+    let v = SkipIfFirst {
+        prefix: None,
+        id: 42,
+    };
+    let json = v.to_json_string();
+    assert_eq!(json, r#"{"id":42}"#);
+    assert_eq!(SkipIfFirst::from_json_str(&json).unwrap(), v);
+}
+
+#[test]
+fn skip_serializing_if_first_present() {
+    let v = SkipIfFirst {
+        prefix: Some(7),
+        id: 42,
+    };
+    let json = v.to_json_string();
+    assert_eq!(json, r#"{"prefix":7,"id":42}"#);
+    assert_eq!(SkipIfFirst::from_json_str(&json).unwrap(), v);
+}
+
+#[test]
+fn skip_serializing_if_middle_skipped() {
+    let v = SkipIfMiddle {
+        id: 1,
+        middle: None,
+        tail: "end".into(),
+    };
+    let json = v.to_json_string();
+    assert_eq!(json, r#"{"id":1,"tail":"end"}"#);
+    assert_eq!(SkipIfMiddle::from_json_str(&json).unwrap(), v);
+}
+
+#[test]
+fn skip_serializing_if_middle_present() {
+    let v = SkipIfMiddle {
+        id: 1,
+        middle: Some("mid".into()),
+        tail: "end".into(),
+    };
+    let json = v.to_json_string();
+    assert_eq!(json, r#"{"id":1,"middle":"mid","tail":"end"}"#);
+    assert_eq!(SkipIfMiddle::from_json_str(&json).unwrap(), v);
+}
+
+#[test]
+fn skip_serializing_if_all_conditional_skipped_empty_object() {
+    let v = SkipIfAllConditional {
+        a: None,
+        b: None,
+    };
+    let json = v.to_json_string();
+    assert_eq!(json, "{}");
+}
+
+#[test]
+fn skip_serializing_if_all_conditional_present() {
+    let v = SkipIfAllConditional {
+        a: Some(9),
+        b: Some("both".into()),
+    };
+    let json = v.to_json_string();
+    assert_eq!(json, r#"{"a":9,"b":"both"}"#);
+    assert_eq!(SkipIfAllConditional::from_json_str(&json).unwrap(), v);
+}
+
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
+}
+
+#[derive(ToJson, FromJson, Debug, PartialEq)]
+struct SkipIfWithCustomSer {
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    #[rjson(serialize_with = "serialize_u64_as_string")]
+    id: u64,
+    name: String,
+}
+
+#[test]
+fn skip_serializing_if_with_custom_ser_skipped() {
+    let v = SkipIfWithCustomSer {
+        id: 0,
+        name: "alice".into(),
+    };
+    let json = v.to_json_string();
+    assert_eq!(json, r#"{"name":"alice"}"#);
+}
+
+#[test]
+fn skip_serializing_if_with_custom_ser_present() {
+    let v = SkipIfWithCustomSer {
+        id: 42,
+        name: "alice".into(),
+    };
+    let json = v.to_json_string();
+    assert_eq!(json, r#"{"id":"42","name":"alice"}"#);
+}
+
+#[test]
+fn skip_serializing_if_size_hint_matches_present_fields() {
+    use jzon::ToJson;
+    let all_skipped = SkipIfAllConditional {
+        a: None,
+        b: None,
+    };
+    assert_eq!(all_skipped.json_size_hint(), 2);
+
+    let one_present = SkipIfAllConditional {
+        a: Some(1),
+        b: None,
+    };
+    // `"a":` (4) + u32 hint (10) + braces (2) = 16
+    assert_eq!(one_present.json_size_hint(), 16);
+
+    let custom_skipped = SkipIfWithCustomSer {
+        id: 0,
+        name: "bob".into(),
+    };
+    // `"name":` (7) + string hint (5) + braces (2) = 14
+    assert_eq!(custom_skipped.json_size_hint(), 14);
+
+    let custom_present = SkipIfWithCustomSer {
+        id: 99,
+        name: "bob".into(),
+    };
+    // `"id":` (5) + custom-ser hint (16) + comma (1) + `"name":` (7) + string (5) + braces (2) = 36
+    assert_eq!(custom_present.json_size_hint(), 36);
+}
+
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 struct WithDefault {
     id: u32,
@@ -231,7 +447,9 @@ struct WithDefault {
     #[serde(default = "default_tag")]
     tag: String,
 }
-fn default_tag() -> String { "untagged".into() }
+fn default_tag() -> String {
+    "untagged".into()
+}
 #[test]
 fn field_default_missing() {
     let json = r#"{"id":5}"#;
@@ -309,7 +527,10 @@ struct WithOption {
 }
 #[test]
 fn option_none() {
-    let v = WithOption { id: 1, middle_name: None };
+    let v = WithOption {
+        id: 1,
+        middle_name: None,
+    };
     let json = v.to_json_string();
     assert!(json.contains("null"), "got: {json}");
     let v2 = WithOption::from_json_str(&json).unwrap();
@@ -317,7 +538,10 @@ fn option_none() {
 }
 #[test]
 fn option_some() {
-    let v = WithOption { id: 2, middle_name: Some("Marie".into()) };
+    let v = WithOption {
+        id: 2,
+        middle_name: Some("Marie".into()),
+    };
     let json = v.to_json_string();
     let v2 = WithOption::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -330,19 +554,25 @@ fn option_absent_field_is_none() {
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 struct WithVec {
-    tags:   Vec<String>,
+    tags: Vec<String>,
     values: Vec<i32>,
 }
 #[test]
 fn vec_roundtrip() {
-    let v = WithVec { tags: vec!["a".into(), "b".into()], values: vec![1, -2, 3] };
+    let v = WithVec {
+        tags: vec!["a".into(), "b".into()],
+        values: vec![1, -2, 3],
+    };
     let json = v.to_json_string();
     let v2 = WithVec::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
 #[test]
 fn vec_empty() {
-    let v = WithVec { tags: vec![], values: vec![] };
+    let v = WithVec {
+        tags: vec![],
+        values: vec![],
+    };
     let json = v.to_json_string();
     let v2 = WithVec::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -350,12 +580,12 @@ fn vec_empty() {
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 struct Address {
     city: String,
-    zip:  String,
+    zip: String,
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 struct Person {
-    name:    String,
-    age:     u8,
+    name: String,
+    age: u8,
     address: Address,
 }
 #[test]
@@ -363,7 +593,10 @@ fn nested_struct_roundtrip() {
     let p = Person {
         name: "Dave".into(),
         age: 42,
-        address: Address { city: "Metropolis".into(), zip: "12345".into() },
+        address: Address {
+            city: "Metropolis".into(),
+            zip: "12345".into(),
+        },
     };
     let json = p.to_json_string();
     let p2 = Person::from_json_str(&json).unwrap();
@@ -386,7 +619,10 @@ fn unit_enum_roundtrip() {
 #[test]
 fn unit_enum_unknown_variant() {
     let json = r#""Unknown""#;
-    assert!(matches!(Status::from_json_str(json), Err(jzon::Error::UnknownVariant)));
+    assert!(matches!(
+        Status::from_json_str(json),
+        Err(jzon::Error::UnknownVariant)
+    ));
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -412,6 +648,34 @@ fn unknown_fields_skipped() {
     let v = Lenient::from_json_str(json).unwrap();
     assert_eq!(v.id, 9);
 }
+#[test]
+fn unknown_string_field_skips_escaped_quotes_and_backslashes() {
+    let json = r#"{"extra":"prefix \"quoted\" slash \\ tail","id":9}"#;
+    let v = Lenient::from_json_str(json).unwrap();
+    assert_eq!(v.id, 9);
+}
+#[test]
+fn skip_value_string_skips_escaped_quotes_and_backslashes() {
+    let mut scanner = jzon::Scanner::new_str(r#""prefix \"quoted\" slash \\ tail" 42"#);
+    scanner.skip_value().unwrap();
+    assert_eq!(scanner.peek_byte_after_ws().unwrap(), b'4');
+}
+#[test]
+fn unknown_string_field_errors_on_unterminated_escape() {
+    let result = Lenient::from_json_str(r#"{"id":9,"extra":"unterminated\"#);
+    assert!(
+        matches!(result, Err(jzon::Error::UnexpectedEof)),
+        "got: {result:?}"
+    );
+}
+#[test]
+fn skip_value_string_errors_on_unterminated_escape() {
+    let mut scanner = jzon::Scanner::new_str(r#""unterminated\"#);
+    assert!(matches!(
+        scanner.skip_value(),
+        Err(jzon::Error::UnexpectedEof)
+    ));
+}
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 struct MultiField {
     a: u32,
@@ -423,7 +687,15 @@ struct MultiField {
 fn out_of_order_fields() {
     let json = r#"{"d":4,"b":2,"a":1,"c":3}"#;
     let v = MultiField::from_json_str(json).unwrap();
-    assert_eq!(v, MultiField { a: 1, b: 2, c: 3, d: 4 });
+    assert_eq!(
+        v,
+        MultiField {
+            a: 1,
+            b: 2,
+            c: 3,
+            d: 4
+        }
+    );
 }
 
 // Monomorphise to a concrete type to sidestep the HRTB/lifetime interaction.
@@ -434,28 +706,56 @@ struct WrapperU32 {
 }
 #[test]
 fn generic_like_struct_u32() {
-    let w = WrapperU32 { inner: 42, count: 1 };
+    let w = WrapperU32 {
+        inner: 42,
+        count: 1,
+    };
     let json = w.to_json_string();
     let w2 = WrapperU32::from_json_str(&json).unwrap();
     assert_eq!(w, w2);
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 struct Large {
-    f01: u32, f02: u32, f03: u32, f04: u32, f05: u32,
-    f06: u32, f07: u32, f08: u32, f09: u32, f10: u32,
+    f01: u32,
+    f02: u32,
+    f03: u32,
+    f04: u32,
+    f05: u32,
+    f06: u32,
+    f07: u32,
+    f08: u32,
+    f09: u32,
+    f10: u32,
 }
 #[test]
 fn large_struct_roundtrip() {
-    let v = Large { f01:1, f02:2, f03:3, f04:4, f05:5, f06:6, f07:7, f08:8, f09:9, f10:10 };
+    let v = Large {
+        f01: 1,
+        f02: 2,
+        f03: 3,
+        f04: 4,
+        f05: 5,
+        f06: 6,
+        f07: 7,
+        f08: 8,
+        f09: 9,
+        f10: 10,
+    };
     let json = v.to_json_string();
     let v2 = Large::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
 #[derive(ToJson)]
-struct Floats { a: f64, b: f64 }
+struct Floats {
+    a: f64,
+    b: f64,
+}
 #[test]
 fn nan_infinity_to_null() {
-    let v = Floats { a: f64::NAN, b: f64::INFINITY };
+    let v = Floats {
+        a: f64::NAN,
+        b: f64::INFINITY,
+    };
     let json = v.to_json_string();
     assert_eq!(json, r#"{"a":null,"b":null}"#);
 }
@@ -463,7 +763,7 @@ fn nan_infinity_to_null() {
 fn escape_roundtrip_control_chars() {
     let v = OwnedStrings {
         name: "tab\there\nnewline".into(),
-        tag:  "quote\"slash\\".into(),
+        tag: "quote\"slash\\".into(),
     };
     let json = v.to_json_string();
     let v2 = OwnedStrings::from_json_str(&json).unwrap();
@@ -471,7 +771,10 @@ fn escape_roundtrip_control_chars() {
 }
 #[test]
 fn unicode_escape_roundtrip() {
-    let v = OwnedStrings { name: "caf\u{00e9}".into(), tag: "\u{1F600}".into() };
+    let v = OwnedStrings {
+        name: "caf\u{00e9}".into(),
+        tag: "\u{1F600}".into(),
+    };
     let json = v.to_json_string();
     let v2 = OwnedStrings::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -514,7 +817,9 @@ fn empty_struct_roundtrip() {
     assert_eq!(v, v2);
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct Solo { x: u64 }
+struct Solo {
+    x: u64,
+}
 #[test]
 fn single_field_roundtrip() {
     let v = Solo { x: 42 };
@@ -524,23 +829,49 @@ fn single_field_roundtrip() {
 }
 #[test]
 fn integer_extremes() {
-    let v = AllPrimitives { a: u8::MAX, b: u16::MAX, c: u32::MAX, d: u64::MAX,
-        e: i8::MIN, f: i16::MIN, g: i32::MIN, h: i64::MIN,
-        fi: 1.0, fj: 1.0, flag: false };
+    let v = AllPrimitives {
+        a: u8::MAX,
+        b: u16::MAX,
+        c: u32::MAX,
+        d: u64::MAX,
+        e: i8::MIN,
+        f: i16::MIN,
+        g: i32::MIN,
+        h: i64::MIN,
+        fi: 1.0,
+        fj: 1.0,
+        flag: false,
+    };
     let json = v.to_json_string();
     let v2 = AllPrimitives::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct L5 { val: u32, inner_a: u32, inner_b: u32 }
+struct L5 {
+    val: u32,
+    inner_a: u32,
+    inner_b: u32,
+}
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct L4 { val: u32, nested: L5 }
+struct L4 {
+    val: u32,
+    nested: L5,
+}
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct L3 { val: u32, nested: L4 }
+struct L3 {
+    val: u32,
+    nested: L4,
+}
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct L2 { val: u32, nested: L3 }
+struct L2 {
+    val: u32,
+    nested: L3,
+}
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct L1 { val: u32, nested: L2 }
+struct L1 {
+    val: u32,
+    nested: L2,
+}
 #[test]
 fn deeply_nested_5_levels_roundtrip() {
     let v = L1 {
@@ -551,7 +882,11 @@ fn deeply_nested_5_levels_roundtrip() {
                 val: 3,
                 nested: L4 {
                     val: 4,
-                    nested: L5 { val: 5, inner_a: 10, inner_b: 20 },
+                    nested: L5 {
+                        val: 5,
+                        inner_a: 10,
+                        inner_b: 20,
+                    },
                 },
             },
         },
@@ -562,7 +897,10 @@ fn deeply_nested_5_levels_roundtrip() {
 }
 #[test]
 fn empty_string_roundtrip() {
-    let v = OwnedStrings { name: "".into(), tag: "".into() };
+    let v = OwnedStrings {
+        name: "".into(),
+        tag: "".into(),
+    };
     let json = v.to_json_string();
     let v2 = OwnedStrings::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -571,7 +909,10 @@ fn empty_string_roundtrip() {
 fn control_chars_roundtrip() {
     // Build a string from all ASCII control chars (0x00–0x1F).
     let name: String = (0u8..=31u8).map(|b| b as char).collect();
-    let v = OwnedStrings { name, tag: String::new() };
+    let v = OwnedStrings {
+        name,
+        tag: String::new(),
+    };
     let json = v.to_json_string();
     let v2 = OwnedStrings::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -597,25 +938,41 @@ fn emoji_surrogate_roundtrip() {
     assert_eq!(v, v2);
 }
 #[derive(ToJson)]
-struct ThreeFloats { a: f64, b: f64, c: f64 }
+struct ThreeFloats {
+    a: f64,
+    b: f64,
+    c: f64,
+}
 #[test]
 fn float_special_values() {
-    let v = ThreeFloats { a: f64::NAN, b: f64::INFINITY, c: f64::NEG_INFINITY };
+    let v = ThreeFloats {
+        a: f64::NAN,
+        b: f64::INFINITY,
+        c: f64::NEG_INFINITY,
+    };
     let json = v.to_json_string();
     assert_eq!(json, r#"{"a":null,"b":null,"c":null}"#);
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct Zeros { a: f64, b: f64 }
+struct Zeros {
+    a: f64,
+    b: f64,
+}
 #[test]
 fn float_zero_variants() {
-    let v = Zeros { a: 0.0_f64, b: -0.0_f64 };
+    let v = Zeros {
+        a: 0.0_f64,
+        b: -0.0_f64,
+    };
     let json = v.to_json_string();
     let v2 = Zeros::from_json_str(&json).unwrap();
     assert!((v2.a - 0.0).abs() < 1e-15);
     assert!((v2.b).abs() < 1e-15);
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct BigU { v: u64 }
+struct BigU {
+    v: u64,
+}
 #[test]
 fn u64_max_roundtrip() {
     let v = BigU { v: u64::MAX };
@@ -625,7 +982,9 @@ fn u64_max_roundtrip() {
     assert_eq!(v, v2);
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct SignedMin { v: i64 }
+struct SignedMin {
+    v: i64,
+}
 #[test]
 fn i64_min_roundtrip() {
     let v = SignedMin { v: i64::MIN };
@@ -643,9 +1002,24 @@ struct Node {
 #[test]
 fn vec_of_nodes_roundtrip() {
     let nodes = vec![
-        Node { id: 1, value: 1.5, left_id: Some(2), right_id: Some(3) },
-        Node { id: 2, value: 2.5, left_id: None, right_id: None },
-        Node { id: 3, value: 3.5, left_id: None, right_id: None },
+        Node {
+            id: 1,
+            value: 1.5,
+            left_id: Some(2),
+            right_id: Some(3),
+        },
+        Node {
+            id: 2,
+            value: 2.5,
+            left_id: None,
+            right_id: None,
+        },
+        Node {
+            id: 3,
+            value: 3.5,
+            left_id: None,
+            right_id: None,
+        },
     ];
     let json = nodes.to_json_string();
     let nodes2 = Vec::<Node>::from_json_str(&json).unwrap();
@@ -653,16 +1027,34 @@ fn vec_of_nodes_roundtrip() {
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
 struct WidePhf {
-    field_alpha: u64, field_beta: u64, field_gamma: u64, field_delta: u64,
-    field_epsilon: u64, field_zeta: u64, field_eta: u64, field_theta: u64,
-    field_iota: u64, field_kappa: u64, field_lambda: u64, field_mu: u64,
+    field_alpha: u64,
+    field_beta: u64,
+    field_gamma: u64,
+    field_delta: u64,
+    field_epsilon: u64,
+    field_zeta: u64,
+    field_eta: u64,
+    field_theta: u64,
+    field_iota: u64,
+    field_kappa: u64,
+    field_lambda: u64,
+    field_mu: u64,
 }
 #[test]
 fn wide_struct_phf_roundtrip() {
     let v = WidePhf {
-        field_alpha: 1, field_beta: 2, field_gamma: 3, field_delta: 4,
-        field_epsilon: 5, field_zeta: 6, field_eta: 7, field_theta: 8,
-        field_iota: 9, field_kappa: 10, field_lambda: 11, field_mu: 12,
+        field_alpha: 1,
+        field_beta: 2,
+        field_gamma: 3,
+        field_delta: 4,
+        field_epsilon: 5,
+        field_zeta: 6,
+        field_eta: 7,
+        field_theta: 8,
+        field_iota: 9,
+        field_kappa: 10,
+        field_lambda: 11,
+        field_mu: 12,
     };
     let json = v.to_json_string();
     let v2 = WidePhf::from_json_str(&json).unwrap();
@@ -679,19 +1071,39 @@ fn wide_struct_phf_out_of_order() {
     assert_eq!(v.field_mu, 12);
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct ShortKeys { a: u64, b: u64, c: u64, id: u64, ok: bool }
+struct ShortKeys {
+    a: u64,
+    b: u64,
+    c: u64,
+    id: u64,
+    ok: bool,
+}
 #[test]
 fn short_key_dispatch_roundtrip() {
-    let v = ShortKeys { a: 1, b: 2, c: 3, id: 42, ok: true };
+    let v = ShortKeys {
+        a: 1,
+        b: 2,
+        c: 3,
+        id: 42,
+        ok: true,
+    };
     let json = v.to_json_string();
     let v2 = ShortKeys::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct SingleChar { x: f64, y: f64, z: f64 }
+struct SingleChar {
+    x: f64,
+    y: f64,
+    z: f64,
+}
 #[test]
 fn single_char_keys() {
-    let v = SingleChar { x: 1.0, y: 2.0, z: 3.0 };
+    let v = SingleChar {
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+    };
     let json = v.to_json_string();
     let v2 = SingleChar::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -732,7 +1144,11 @@ fn swar_finds_backslash_at_all_offsets() {
     }
 }
 #[derive(ToJson, FromJson, Debug, PartialEq)]
-struct Xyz { x: f64, y: f64, z: f64 }
+struct Xyz {
+    x: f64,
+    y: f64,
+    z: f64,
+}
 #[test]
 fn fused_key_colon_with_spaces() {
     let json = "{\n  \"x\" : 1.0 ,\n  \"y\" : -2.5 ,\n  \"z\" : 3.14\n}";
@@ -745,8 +1161,12 @@ fn fused_key_colon_with_spaces() {
 fn capacity_hint_reasonable() {
     let v = Point { x: 1.5, y: 2.5 };
     let bytes = v.to_json_bytes();
-    assert!(bytes.capacity() <= bytes.len() * 4,
-        "excessive pre-allocation: cap={} len={}", bytes.capacity(), bytes.len());
+    assert!(
+        bytes.capacity() <= bytes.len() * 4,
+        "excessive pre-allocation: cap={} len={}",
+        bytes.capacity(),
+        bytes.len()
+    );
 }
 #[test]
 fn unknown_nested_object_skipped() {
@@ -758,7 +1178,9 @@ fn unknown_nested_object_skipped() {
 fn fixed_buf_stack_roundtrip() {
     use jzon::ToJsonExt;
     let p = Point { x: 1.5, y: -2.0 };
-    let buf = p.to_fixed_buf::<64>().expect("64 bytes is enough for Point");
+    let buf = p
+        .to_fixed_buf::<64>()
+        .expect("64 bytes is enough for Point");
     assert!(buf.len() > 0);
     assert!(buf.as_str().contains("1.5"));
     let p2 = Point::from_json_bytes(buf.as_slice()).unwrap();
@@ -774,12 +1196,68 @@ fn json_write_reuse_deterministic() {
     assert_eq!(out1, out2);
 }
 #[test]
+fn fixed_buf_too_small_returns_none() {
+    use jzon::ToJsonExt;
+    let p = Point { x: 1.5, y: -2.0 };
+    assert!(p.to_fixed_buf::<8>().is_none());
+}
+
+#[test]
+fn length_counter_matches_vec_len() {
+    use jzon::ToJsonExt;
+    let p = Point { x: 1.5, y: -2.0 };
+    assert_eq!(p.json_byte_len(), p.to_json_bytes().len());
+}
+
+#[test]
+fn derived_struct_uses_sink_path() {
+    use jzon::{LengthCounter, ToJson};
+    let p = Point { x: 1.5, y: -2.0 };
+    let mut counter = LengthCounter::new();
+    p.json_write_sink(&mut counter);
+    assert_eq!(counter.len(), p.to_json_bytes().len());
+}
+#[test]
 fn json_sink_vec_and_fixed_produce_same_output() {
     use jzon::ToJsonExt;
     let p = Point { x: 1.5, y: -2.0 };
     let vec_out = p.to_json_bytes();
     let fixed_out = p.to_fixed_buf::<64>().unwrap();
     assert_eq!(vec_out.as_slice(), fixed_out.as_slice());
+}
+
+#[test]
+fn tojson_object_safety() {
+    use jzon::ToJson;
+    let p = Point { x: 1.0, y: 2.0 };
+    let json: &dyn ToJson = &p;
+    assert!(json.json_size_hint() > 0);
+    let mut buf = Vec::new();
+    json.json_write(&mut buf);
+    assert!(!buf.is_empty());
+}
+
+#[test]
+fn json_write_io_preserves_write_error() {
+    use jzon::ToJsonExt;
+    use std::io::{self, Write};
+
+    struct FailWriter;
+
+    impl Write for FailWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken pipe"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let p = Point { x: 1.0, y: 2.0 };
+    let err = p.json_write_io(FailWriter).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    assert_eq!(err.to_string(), "broken pipe");
 }
 #[test]
 fn const_json_str_len_correctness() {
@@ -790,10 +1268,20 @@ fn const_json_str_len_correctness() {
 }
 #[test]
 fn jzon_serde_roundtrip_matches_serde_json() {
-    #[derive(jzon::ToJson, jzon::FromJson, serde::Serialize, serde::Deserialize, Debug, PartialEq)]
-    struct Payload { id: u64, value: f64, tag: String }
+    #[derive(
+        jzon::ToJson, jzon::FromJson, serde::Serialize, serde::Deserialize, Debug, PartialEq,
+    )]
+    struct Payload {
+        id: u64,
+        value: f64,
+        tag: String,
+    }
 
-    let p = Payload { id: 42, value: 3.14, tag: "hello".into() };
+    let p = Payload {
+        id: 42,
+        value: 3.14,
+        tag: "hello".into(),
+    };
     let rjson_out = p.to_json_string();
     let serde_out = serde_json::to_string(&p).unwrap();
     assert_eq!(rjson_out, serde_out, "Mode A output must match serde_json");
@@ -802,12 +1290,17 @@ fn jzon_serde_roundtrip_matches_serde_json() {
     assert_eq!(mode_b_out, serde_out, "Mode B output must match serde_json");
 }
 #[derive(jzon::ToJson, jzon::FromJson, Debug, PartialEq)]
-struct WithChar { c: char }
+struct WithChar {
+    c: char,
+}
 #[test]
 fn char_roundtrip() {
     let v = WithChar { c: 'A' };
     let json = v.to_json_string();
-    assert!(json.contains("\"A\""), "expected serialized char, got: {json}");
+    assert!(
+        json.contains("\"A\""),
+        "expected serialized char, got: {json}"
+    );
     let v2 = WithChar::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
@@ -824,7 +1317,10 @@ struct UnitNewtype;
 fn unit_struct_serializes_braces() {
     let v = UnitNewtype;
     let json = v.to_json_string();
-    assert_eq!(json, "{}", "unit struct should serialize as empty object, got: {json}");
+    assert_eq!(
+        json, "{}",
+        "unit struct should serialize as empty object, got: {json}"
+    );
 }
 #[derive(jzon::ToJson, jzon::FromJson, Debug, PartialEq)]
 struct Miles(f64);
@@ -832,7 +1328,10 @@ struct Miles(f64);
 fn newtype_struct_delegates_to_inner() {
     let v = Miles(3.14);
     let json = v.to_json_string();
-    assert!(!json.contains('{'), "newtype should not add braces, got: {json}");
+    assert!(
+        !json.contains('{'),
+        "newtype should not add braces, got: {json}"
+    );
     let v2 = Miles::from_json_str(&json).unwrap();
     assert!((v2.0 - 3.14).abs() < 1e-10, "roundtrip mismatch: {}", v2.0);
 }
@@ -852,7 +1351,10 @@ struct Pair(u64, f64);
 fn tuple_struct_serializes_as_array() {
     let v = Pair(42, 3.14);
     let json = v.to_json_string();
-    assert!(json.starts_with('['), "tuple struct should be JSON array, got: {json}");
+    assert!(
+        json.starts_with('['),
+        "tuple struct should be JSON array, got: {json}"
+    );
     assert!(json.contains("42"), "got: {json}");
     let v2 = Pair::from_json_str(&json).unwrap();
     assert_eq!(v.0, v2.0);
@@ -870,23 +1372,39 @@ fn tuple_struct_three_fields() {
 }
 #[derive(jzon::ToJson, jzon::FromJson, Debug, PartialEq)]
 #[serde(transparent)]
-struct Wrapper { inner: f64 }
+struct Wrapper {
+    inner: f64,
+}
 #[test]
 fn transparent_delegates() {
     let v = Wrapper { inner: 2.718 };
     let json = v.to_json_string();
-    assert!(!json.contains('{'), "transparent should not wrap in object, got: {json}");
+    assert!(
+        !json.contains('{'),
+        "transparent should not wrap in object, got: {json}"
+    );
     let v2 = Wrapper::from_json_str(&json).unwrap();
-    assert!((v2.inner - 2.718).abs() < 1e-10, "roundtrip mismatch: {}", v2.inner);
+    assert!(
+        (v2.inner - 2.718).abs() < 1e-10,
+        "roundtrip mismatch: {}",
+        v2.inner
+    );
 }
 #[test]
 fn transparent_string_delegates() {
     #[derive(jzon::ToJson, jzon::FromJson, Debug, PartialEq)]
     #[serde(transparent)]
-    struct Tag { value: String }
-    let v = Tag { value: "hello".into() };
+    struct Tag {
+        value: String,
+    }
+    let v = Tag {
+        value: "hello".into(),
+    };
     let json = v.to_json_string();
-    assert_eq!(json, r#""hello""#, "transparent String should serialize as bare string");
+    assert_eq!(
+        json, r#""hello""#,
+        "transparent String should serialize as bare string"
+    );
     let v2 = Tag::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
@@ -894,7 +1412,10 @@ fn transparent_string_delegates() {
 fn tuple_two_roundtrip() {
     let v: (u64, String) = (42, "hello".into());
     let json = v.to_json_string();
-    assert_eq!(json, r#"[42,"hello"]"#, "2-tuple should serialize as JSON array");
+    assert_eq!(
+        json, r#"[42,"hello"]"#,
+        "2-tuple should serialize as JSON array"
+    );
     let v2: (u64, String) = FromJson::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
@@ -902,24 +1423,36 @@ fn tuple_two_roundtrip() {
 fn tuple_three_roundtrip() {
     let v: (i32, f64, bool) = (-1, 2.5, true);
     let json = v.to_json_string();
-    assert!(json.starts_with('['), "3-tuple should be array, got: {json}");
+    assert!(
+        json.starts_with('['),
+        "3-tuple should be array, got: {json}"
+    );
     let v2: (i32, f64, bool) = FromJson::from_json_str(&json).unwrap();
     assert_eq!(v.0, v2.0);
     assert!((v.1 - v2.1).abs() < 1e-10);
     assert_eq!(v.2, v2.2);
 }
 #[derive(jzon::ToJson, jzon::FromJson, Debug, PartialEq)]
-struct BigInts { v_u128: u128, v_i128: i128 }
+struct BigInts {
+    v_u128: u128,
+    v_i128: i128,
+}
 #[test]
 fn u128_large_value() {
-    let v = BigInts { v_u128: u128::MAX, v_i128: i128::MIN };
+    let v = BigInts {
+        v_u128: u128::MAX,
+        v_i128: i128::MIN,
+    };
     let json = v.to_json_string();
     let v2 = BigInts::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
 }
 #[test]
 fn u128_zero() {
-    let v = BigInts { v_u128: 0, v_i128: 0 };
+    let v = BigInts {
+        v_u128: 0,
+        v_i128: 0,
+    };
     let json = v.to_json_string();
     let v2 = BigInts::from_json_str(&json).unwrap();
     assert_eq!(v, v2);
@@ -942,7 +1475,10 @@ fn hashmap_to_json() {
     let mut m: HashMap<String, u64> = HashMap::new();
     m.insert("a".into(), 1);
     let json = m.to_json_string();
-    assert!(json.starts_with('{'), "HashMap should serialize as JSON object, got: {json}");
+    assert!(
+        json.starts_with('{'),
+        "HashMap should serialize as JSON object, got: {json}"
+    );
     assert!(json.contains("\"a\""), "got: {json}");
     assert!(json.contains(':'), "got: {json}");
 }
@@ -981,17 +1517,35 @@ enum Shape {
 fn enum_struct_variant_ser_circle() {
     let c = Shape::Circle { radius: 1.5 };
     let json = c.to_json_string();
-    assert!(json.contains("\"type\""), "internally tagged: missing 'type' key, got: {json}");
-    assert!(json.contains("\"Circle\""), "expected variant name, got: {json}");
+    assert!(
+        json.contains("\"type\""),
+        "internally tagged: missing 'type' key, got: {json}"
+    );
+    assert!(
+        json.contains("\"Circle\""),
+        "expected variant name, got: {json}"
+    );
     assert!(json.contains("1.5"), "expected radius, got: {json}");
 }
 #[test]
 fn enum_struct_variant_ser_rectangle() {
-    let r = Shape::Rectangle { width: 2.0, height: 3.0 };
+    let r = Shape::Rectangle {
+        width: 2.0,
+        height: 3.0,
+    };
     let json = r.to_json_string();
-    assert!(json.contains("\"Rectangle\""), "expected variant name, got: {json}");
-    assert!(json.contains("\"width\""), "expected width field, got: {json}");
-    assert!(json.contains("\"height\""), "expected height field, got: {json}");
+    assert!(
+        json.contains("\"Rectangle\""),
+        "expected variant name, got: {json}"
+    );
+    assert!(
+        json.contains("\"width\""),
+        "expected width field, got: {json}"
+    );
+    assert!(
+        json.contains("\"height\""),
+        "expected height field, got: {json}"
+    );
 }
 #[test]
 fn btreemap_roundtrip() {
@@ -1015,28 +1569,48 @@ fn btreemap_sorted_key_order() {
     let a_pos = json.find("\"a\"").unwrap_or(usize::MAX);
     let m_pos = json.find("\"m\"").unwrap_or(usize::MAX);
     let z_pos = json.find("\"z\"").unwrap_or(usize::MAX);
-    assert!(a_pos < m_pos && m_pos < z_pos, "BTreeMap not sorted: {json}");
+    assert!(
+        a_pos < m_pos && m_pos < z_pos,
+        "BTreeMap not sorted: {json}"
+    );
 }
 #[test]
 fn char_via_serde_compat() {
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
-    struct S { c: char }
+    struct S {
+        c: char,
+    }
     let v = S { c: '€' };
     let json = jzon_serde::to_string(&v).unwrap();
     let v2: S = jzon_serde::from_str(&json).unwrap();
     assert_eq!(v, v2);
 }
 #[derive(jzon::ToJson, jzon::FromJson, Debug, PartialEq)]
-struct ScoreEntry { score: u64, rank: u32 }
+struct ScoreEntry {
+    score: u64,
+    rank: u32,
+}
 #[test]
 fn hashmap_struct_value_roundtrip() {
     use std::collections::HashMap;
     let mut m: HashMap<String, ScoreEntry> = HashMap::new();
-    m.insert("alice".into(), ScoreEntry { score: 100, rank: 1 });
+    m.insert(
+        "alice".into(),
+        ScoreEntry {
+            score: 100,
+            rank: 1,
+        },
+    );
     m.insert("bob".into(), ScoreEntry { score: 80, rank: 2 });
     let json = m.to_json_string();
     let m2: HashMap<String, ScoreEntry> = FromJson::from_json_str(&json).unwrap();
-    assert_eq!(m2.get("alice"), Some(&ScoreEntry { score: 100, rank: 1 }));
+    assert_eq!(
+        m2.get("alice"),
+        Some(&ScoreEntry {
+            score: 100,
+            rank: 1
+        })
+    );
     assert_eq!(m2.len(), 2);
 }
 #[test]
@@ -1066,11 +1640,17 @@ enum TaggedShape {
 fn internally_tagged_enum_roundtrip() {
     let c = TaggedShape::Circle { radius: 1.5 };
     let json = c.to_json_string();
-    assert!(json.contains("\"Circle\"") && json.contains("1.5"), "got: {json}");
+    assert!(
+        json.contains("\"Circle\"") && json.contains("1.5"),
+        "got: {json}"
+    );
     let c2 = TaggedShape::from_json_str(&json).unwrap();
     assert_eq!(c, c2);
 
-    let r = TaggedShape::Rectangle { width: 2.0, height: 3.0 };
+    let r = TaggedShape::Rectangle {
+        width: 2.0,
+        height: 3.0,
+    };
     let rjson = r.to_json_string();
     let r2 = TaggedShape::from_json_str(&rjson).unwrap();
     assert_eq!(r, r2);
@@ -1080,7 +1660,13 @@ fn internally_tagged_enum_tag_not_first() {
     // Tag appears AFTER other fields — two-pass approach handles this correctly.
     let json = r#"{"width":4.0,"height":5.0,"type":"Rectangle"}"#;
     let r = TaggedShape::from_json_str(json).unwrap();
-    assert_eq!(r, TaggedShape::Rectangle { width: 4.0, height: 5.0 });
+    assert_eq!(
+        r,
+        TaggedShape::Rectangle {
+            width: 4.0,
+            height: 5.0
+        }
+    );
 }
 #[test]
 fn internally_tagged_enum_matches_serde_json() {
@@ -1088,6 +1674,94 @@ fn internally_tagged_enum_matches_serde_json() {
     let jzon_out = c.to_json_string();
     let serde_out = serde_json::to_string(&c).unwrap();
     assert_eq!(jzon_out, serde_out, "jzon output must match serde_json");
+}
+
+#[derive(jzon::FromJson, jzon::ToJson, Debug, PartialEq)]
+#[serde(tag = "type")]
+enum TaggedDispatch {
+    Circle { radius: f64 },
+    Rectangle { width: f64, height: f64 },
+    Point,
+    #[serde(rename = "Cir\\cle")]
+    EscapedCircle { radius: f64 },
+}
+
+#[test]
+fn internally_tagged_enum_tag_first_struct_variant() {
+    let json = r#"{"type":"Circle","radius":2.5}"#;
+    let shape = TaggedDispatch::from_json_str(json).unwrap();
+    assert_eq!(
+        shape,
+        TaggedDispatch::Circle { radius: 2.5 },
+        "tag-first struct variant must parse remaining fields without rescan"
+    );
+}
+
+#[test]
+fn internally_tagged_enum_tag_last_struct_variant() {
+    let json = r#"{"width":4.0,"height":5.0,"type":"Rectangle"}"#;
+    let shape = TaggedDispatch::from_json_str(json).unwrap();
+    assert_eq!(
+        shape,
+        TaggedDispatch::Rectangle {
+            width: 4.0,
+            height: 5.0
+        },
+        "tag-last struct variant must still parse via reset/rescan fallback"
+    );
+}
+
+#[test]
+fn internally_tagged_enum_unit_variant_tag_first() {
+    let json = r#"{"type":"Point"}"#;
+    let shape = TaggedDispatch::from_json_str(json).unwrap();
+    assert_eq!(shape, TaggedDispatch::Point);
+}
+
+#[test]
+fn internally_tagged_enum_unit_variant_tag_last() {
+    let json = r#"{"extra":1,"type":"Point"}"#;
+    let shape = TaggedDispatch::from_json_str(json).unwrap();
+    assert_eq!(shape, TaggedDispatch::Point);
+}
+
+#[test]
+fn internally_tagged_enum_unknown_variant() {
+    let err = TaggedDispatch::from_json_str(r#"{"type":"Triangle"}"#).unwrap_err();
+    assert_eq!(err, jzon::Error::UnknownVariant);
+    let err = TaggedDispatch::from_json_str(r#"{"width":1.0,"type":"Triangle"}"#).unwrap_err();
+    assert_eq!(err, jzon::Error::UnknownVariant);
+}
+
+#[test]
+fn internally_tagged_enum_escaped_tag_value() {
+    // JSON \\c → unescaped tag Cir\cle (serde rename = "Cir\\cle")
+    let json = r#"{"type":"Cir\\cle","radius":3.0}"#;
+    let shape = TaggedDispatch::from_json_str(json).unwrap();
+    assert_eq!(
+        shape,
+        TaggedDispatch::EscapedCircle { radius: 3.0 },
+        "escaped tag values must dispatch via owned JsonStr fallback"
+    );
+}
+
+#[test]
+fn internally_tagged_enum_borrowed_tag_dispatch() {
+    use jzon::scanner::{JsonStr, Scanner};
+
+    static JSON: &str = r#"{"type":"Circle","radius":1.0}"#;
+    let mut scanner = Scanner::new_str(JSON);
+    scanner.skip_whitespace();
+    scanner.expect_byte(b'{').unwrap();
+    let key = scanner.read_key_colon().unwrap();
+    assert_eq!(key, b"type");
+    let tag = scanner.read_str().unwrap();
+    assert!(
+        matches!(tag, JsonStr::BorrowedNoEsc("Circle")),
+        "unescaped tag-first values should stay borrowed for dispatch"
+    );
+    let shape = TaggedDispatch::from_json_str(JSON).unwrap();
+    assert_eq!(shape, TaggedDispatch::Circle { radius: 1.0 });
 }
 
 // ── serde attr completeness ────────────────────────────────────────────────
@@ -1135,7 +1809,9 @@ fn serialize_u64_as_string(v: &u64, w: &mut Vec<u8>) {
 
 fn deserialize_u64_from_string(scanner: &mut jzon::Scanner) -> Result<u64, jzon::Error> {
     let js = scanner.read_str()?;
-    js.as_str().parse::<u64>().map_err(|_| jzon::Error::UnexpectedToken)
+    js.as_str()
+        .parse::<u64>()
+        .map_err(|_| jzon::Error::UnexpectedToken)
 }
 
 #[derive(ToJson, FromJson, Debug, PartialEq)]
@@ -1162,7 +1838,10 @@ struct WithCustomBoth {
 
 #[test]
 fn serialize_with_writes_u64_as_string() {
-    let s = WithCustomSer { id: 42, name: "alice".into() };
+    let s = WithCustomSer {
+        id: 42,
+        name: "alice".into(),
+    };
     let json = s.to_json_string();
     // id must be a JSON string, not a number
     assert!(json.contains("\"42\""), "expected quoted 42, got: {json}");
@@ -1198,19 +1877,25 @@ fn deserialize_with_propagates_error() {
 #[derive(FromJson, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct DenyStrict {
-    id:    u32,
-    name:  String,
+    id: u32,
+    name: String,
     score: f64,
 }
 #[test]
 fn deny_unknown_first_byte_mismatch_errors() {
     let json = r#"{"id":1,"name":"Alice","score":9.5,"zzzUnknown":"x"}"#;
-    assert!(matches!(DenyStrict::from_json_str(json), Err(jzon::Error::UnknownField)));
+    assert!(matches!(
+        DenyStrict::from_json_str(json),
+        Err(jzon::Error::UnknownField)
+    ));
 }
 #[test]
 fn deny_unknown_known_first_byte_but_wrong_key_errors() {
     let json = r#"{"id":1,"name":"Alice","score":9.5,"nobody":"x"}"#;
-    assert!(matches!(DenyStrict::from_json_str(json), Err(jzon::Error::UnknownField)));
+    assert!(matches!(
+        DenyStrict::from_json_str(json),
+        Err(jzon::Error::UnknownField)
+    ));
 }
 #[test]
 fn deny_unknown_valid_fields_ok() {
@@ -1221,7 +1906,11 @@ fn deny_unknown_valid_fields_ok() {
 }
 
 #[derive(FromJson, Debug, PartialEq)]
-struct SmallBitmask { a: u32, b: u32, c: u32 }
+struct SmallBitmask {
+    a: u32,
+    b: u32,
+    c: u32,
+}
 #[test]
 fn small_bitmask_all_fields_present() {
     let v = SmallBitmask::from_json_str(r#"{"a":1,"b":2,"c":3}"#).unwrap();
@@ -1229,12 +1918,47 @@ fn small_bitmask_all_fields_present() {
 }
 #[test]
 fn small_bitmask_missing_field_errors() {
-    assert!(matches!(SmallBitmask::from_json_str(r#"{"a":1,"b":2}"#), Err(jzon::Error::MissingField(_))));
+    assert!(matches!(
+        SmallBitmask::from_json_str(r#"{"a":1,"b":2}"#),
+        Err(jzon::Error::MissingField(_))
+    ));
 }
 #[test]
 fn small_bitmask_out_of_order_ok() {
     let v = SmallBitmask::from_json_str(r#"{"c":30,"a":10,"b":20}"#).unwrap();
     assert_eq!((v.a, v.b, v.c), (10, 20, 30));
+}
+
+#[derive(FromJson, Debug, PartialEq)]
+#[rjson(trie_dispatch)]
+struct TrieDispatch {
+    alpha: u64,
+    beta: u64,
+    gamma: u64,
+    delta: u64,
+    epsilon: u64,
+    zeta: u64,
+    eta: u64,
+    theta: u64,
+}
+
+#[test]
+fn rjson_trie_dispatch_compiles_and_parses_out_of_order() {
+    let json = r#"{"theta":8,"eta":7,"zeta":6,"epsilon":5,"delta":4,"gamma":3,"beta":2,"alpha":1}"#;
+    let v = TrieDispatch::from_json_str(json).unwrap();
+    assert_eq!(
+        v,
+        TrieDispatch {
+            alpha: 1,
+            beta: 2,
+            gamma: 3,
+            delta: 4,
+            epsilon: 5,
+            zeta: 6,
+            eta: 7,
+            theta: 8,
+        }
+    );
 }
 // ── BorrowedNoEsc / zero-copy fast-path tests ─────────────────────────────────
 
@@ -1317,4 +2041,90 @@ fn jsonstr_into_owned_works_for_no_esc() {
     assert!(matches!(js, JsonStr::BorrowedNoEsc(_)));
     let owned: String = js.into_owned();
     assert_eq!(owned, "owned copy");
+}
+
+// ── Task 7: fused ASCII/UTF-8 string scan + read_str validation ───────────────
+
+#[test]
+fn scan_string_run_stops_on_quote_and_tracks_ascii() {
+    use jzon::simd;
+    let input = br#"hello"tail"#;
+    let (stop, ascii_only) = simd::scan_string_run(input, 0);
+    assert_eq!(stop, 5);
+    assert!(ascii_only);
+}
+
+#[test]
+fn scan_string_run_stops_on_backslash() {
+    use jzon::simd;
+    let input = br#"abc\def"#;
+    let (stop, ascii_only) = simd::scan_string_run(input, 0);
+    assert_eq!(stop, 3);
+    assert!(ascii_only);
+}
+
+#[test]
+fn scan_string_run_stops_on_control_and_clears_ascii_only() {
+    use jzon::simd;
+    let input = b"abc\x01def";
+    let (stop, ascii_only) = simd::scan_string_run(input, 0);
+    assert_eq!(stop, 3);
+    assert!(ascii_only);
+}
+
+#[test]
+fn scan_string_run_detects_non_ascii_before_quote() {
+    use jzon::simd;
+    let input = "caf\u{00e9}".as_bytes();
+    let (stop, ascii_only) = simd::scan_string_run(input, 0);
+    assert_eq!(stop, input.len());
+    assert!(!ascii_only);
+}
+
+#[test]
+fn read_str_ascii_unescaped_returns_borrowed_no_esc() {
+    use jzon::scanner::{JsonStr, Scanner};
+    let input = r#""the quick brown fox""#;
+    let mut sc = Scanner::new_str(input);
+    let js = sc.read_str().unwrap();
+    assert!(matches!(js, JsonStr::BorrowedNoEsc(_)));
+    assert_eq!(js.as_str(), "the quick brown fox");
+}
+
+#[test]
+fn read_str_valid_non_ascii_unescaped() {
+    use jzon::scanner::{JsonStr, Scanner};
+    let input = "\"caf\u{00e9}\"";
+    let mut sc = Scanner::new_str(input);
+    let js = sc.read_str().unwrap();
+    assert!(matches!(js, JsonStr::BorrowedNoEsc(_)));
+    assert_eq!(js.as_str(), "caf\u{00e9}");
+}
+
+#[test]
+fn read_str_invalid_utf8_unescaped_returns_error() {
+    use jzon::scanner::Scanner;
+    use jzon::Error;
+    let input = b"\"\xFF\xFE\"";
+    let mut sc = Scanner::new(input);
+    assert!(matches!(sc.read_str(), Err(Error::InvalidUtf8)));
+}
+
+#[test]
+fn read_str_raw_control_byte_returns_invalid_escape() {
+    use jzon::scanner::Scanner;
+    use jzon::Error;
+    let input = b"\"hello\x01world\"";
+    let mut sc = Scanner::new(input);
+    assert!(matches!(sc.read_str(), Err(Error::InvalidEscape)));
+}
+
+#[test]
+fn read_str_escaped_still_returns_owned() {
+    use jzon::scanner::{JsonStr, Scanner};
+    let input = r#""line\nquote\"slash\\tab\t""#;
+    let mut sc = Scanner::new_str(input);
+    let js = sc.read_str().unwrap();
+    assert!(matches!(js, JsonStr::Owned(_)));
+    assert_eq!(js.as_str(), "line\nquote\"slash\\tab\t");
 }

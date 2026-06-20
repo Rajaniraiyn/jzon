@@ -2,14 +2,14 @@ name: bench
 
 # Criterion bench runner. Runs bench_cmp on 5 platforms (x86_64-darwin dropped).
 # Default run (no arguments): runs both stable and nightly feature configs in parallel
-# on all 5 platforms, then generates BENCHMARKS.md using a high-water mark — numbers
-# only go up (new value wins only if it exceeds the stored value).
+# on all 5 platforms, then generates BENCHMARKS.md with both current-run values
+# and the existing high-water mark — published headline numbers only go up.
 #
 # Config A (stable):  simd,simd-intrinsics,fast-float,zmij-float-ser
 # Config B (nightly): simd,simd-intrinsics,fast-float,zmij-float-ser,unstable
 #
 # When bench=bench_cmp and update_docs=true (default), the aggregate job:
-#   - generates BENCHMARKS.md from parsed criterion output (high-water mark)
+#   - generates BENCHMARKS.md from parsed criterion output (current run + high-water)
 #   - replaces <!-- bench:* --> markers in READMEs
 #   - opens or updates a PR on branch bench-results/<ref>
 
@@ -17,7 +17,7 @@ name: bench
   workflow_dispatch:
     inputs:
       bench:
-        description: 'Criterion bench target (bench_cmp or bench_simd)'
+        description: 'Criterion bench target (bench_cmp, bench_simd, bench_scanner, or bench_derive_dispatch)'
         type: string
         default: 'bench_cmp'
       features:
@@ -371,7 +371,8 @@ jobs:
           # ── build data arrays from this run's logs ───────────────────────────
           # We merge stable and nightly logs: for each cell, take the higher value.
 
-          declare -A DATA  # DATA[platform:workload] = best throughput this run
+          declare -A DATA     # DATA[platform:workload] = high-water output after merge
+          declare -A CURRENT  # CURRENT[platform:workload] = best throughput from this workflow run only
 
           for platform in "${PLATFORMS[@]}"; do
             # Try both stable and nightly log directories
@@ -408,6 +409,11 @@ jobs:
                 done
               done
             done
+          done
+
+          # Snapshot current-run values before merging stored high-water values.
+          for key in "${!DATA[@]}"; do
+            CURRENT["$key"]="${DATA[$key]}"
           done
 
           # ── apply high-water mark: merge with stored values ──────────────────
@@ -455,6 +461,7 @@ jobs:
             echo ""
             echo "Criterion median throughput. GiB/s where >= 1, MiB/s otherwise. Higher is better."
             echo "High-water mark: values only increase across runs."
+            echo "Current-run tables show this workflow run before high-water merging."
             echo ""
             echo "## Headline (jzon)"
             echo ""
@@ -500,6 +507,30 @@ jobs:
           echo "" >> BENCHMARKS.md
           echo "<!-- bench:headline-end -->" >> BENCHMARKS.md
           echo "" >> BENCHMARKS.md
+
+          # Current-run headline section
+          {
+            echo "## Current Run (jzon)"
+            echo ""
+            echo "Latest workflow run only; values here are not merged with stored high-water results."
+            echo ""
+            echo "<!-- bench:current-run-start -->"
+            printf "| Platform | twitter de | twitter ser | citm de | canada ser |\n"
+            printf "|---|--:|--:|--:|--:|\n"
+            for entry in "${PLATFORM_LABELS[@]}"; do
+              pkey="${entry%%:*}"
+              label="${entry##*:}"
+              td="${CURRENT["${pkey}:twitter de"]:-—}"
+              ts="${CURRENT["${pkey}:twitter ser"]:-—}"
+              cd="${CURRENT["${pkey}:citm de"]:-—}"
+              cs="${CURRENT["${pkey}:canada ser"]:-—}"
+              [ "$td$ts$cd$cs" = "————" ] && continue
+              printf "| %-28s | %10s | %10s | %10s | %10s |\n" "$label" "$td" "$ts" "$cd" "$cs"
+            done
+            echo ""
+            echo "<!-- bench:current-run-end -->"
+            echo ""
+          } >> BENCHMARKS.md
 
           # Head-to-head section
           {
@@ -575,7 +606,7 @@ jobs:
           for entry in "${PLATFORM_LABELS[@]}"; do
             pkey="${entry%%:*}"
             label="${entry##*:}"
-            val="${DATA["${pkey}:twitter ser"]:-}"
+            val="${CURRENT["${pkey}:twitter ser"]:-}"
             [ "$val" != "—" ] && [ -n "$val" ] && PLATFORMS_RAN="${PLATFORMS_RAN}"$'\n'"- ${label}: ${val} twitter ser"
           done
           echo "$PLATFORMS_RAN" > /tmp/delta-report.md
@@ -610,7 +641,7 @@ jobs:
             echo "Auto-generated benchmark results for \`${BASE_REF}\`."
             echo ""
             echo "Both stable (\`simd,simd-intrinsics,fast-float,zmij-float-ser\`) and nightly (\`+unstable\`) configs ran in parallel."
-            echo "High-water mark applied: stored numbers only increase, never regress due to runner variance."
+            echo "BENCHMARKS.md includes current-run values plus high-water values; stored headline numbers only increase, never regress due to runner variance."
             echo ""
             echo "[Run log](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
             echo ""

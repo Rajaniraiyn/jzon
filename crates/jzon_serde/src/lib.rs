@@ -473,11 +473,28 @@ pub fn from_reader<R: std::io::Read, T: DeserializeOwned>(mut r: R) -> Result<T,
     from_reader_inner(&buf)
 }
 
-macro_rules! deserialize_int {
-    ($method:ident, $num_ty:ty, $visit:ident, $cast:ty) => {
+macro_rules! deserialize_signed_int {
+    ($method:ident, $visit:ident, $num_ty:ty) => {
         fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
             let bytes = self.scanner.read_number_bytes()?;
-            visitor.$visit(parse_num::<$num_ty>(bytes)? as $cast)
+            let n = parse_i64(bytes)?;
+            if n < <$num_ty>::MIN as i64 || n > <$num_ty>::MAX as i64 {
+                return Err(Error::Scanner(jzon::Error::InvalidNumber));
+            }
+            visitor.$visit(n as $num_ty)
+        }
+    };
+}
+
+macro_rules! deserialize_unsigned_int {
+    ($method:ident, $visit:ident, $num_ty:ty) => {
+        fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+            let bytes = self.scanner.read_number_bytes()?;
+            let n = parse_u64(bytes)?;
+            if n > <$num_ty>::MAX as u64 {
+                return Err(Error::Scanner(jzon::Error::InvalidNumber));
+            }
+            visitor.$visit(n as $num_ty)
         }
     };
 }
@@ -503,14 +520,24 @@ impl<'de, 'a> de_trait::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_bool(v)
     }
 
-    deserialize_int!(deserialize_i8,  i64, visit_i8,  i8);
-    deserialize_int!(deserialize_i16, i64, visit_i16, i16);
-    deserialize_int!(deserialize_i32, i64, visit_i32, i32);
-    deserialize_int!(deserialize_i64, i64, visit_i64, i64);
-    deserialize_int!(deserialize_u8,  u64, visit_u8,  u8);
-    deserialize_int!(deserialize_u16, u64, visit_u16, u16);
-    deserialize_int!(deserialize_u32, u64, visit_u32, u32);
-    deserialize_int!(deserialize_u64, u64, visit_u64, u64);
+    deserialize_signed_int!(deserialize_i8,  visit_i8,  i8);
+    deserialize_signed_int!(deserialize_i16, visit_i16, i16);
+    deserialize_signed_int!(deserialize_i32, visit_i32, i32);
+    deserialize_signed_int!(deserialize_i64, visit_i64, i64);
+    deserialize_unsigned_int!(deserialize_u8,  visit_u8,  u8);
+    deserialize_unsigned_int!(deserialize_u16, visit_u16, u16);
+    deserialize_unsigned_int!(deserialize_u32, visit_u32, u32);
+    deserialize_unsigned_int!(deserialize_u64, visit_u64, u64);
+
+    fn deserialize_i128<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        let bytes = self.scanner.read_number_bytes()?;
+        visitor.visit_i128(parse_i128(bytes)?)
+    }
+
+    fn deserialize_u128<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        let bytes = self.scanner.read_number_bytes()?;
+        visitor.visit_u128(parse_u128(bytes)?)
+    }
 
     fn deserialize_f32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         let bytes = self.scanner.read_number_bytes()?;
@@ -656,11 +683,88 @@ impl<'de, 'a> de_trait::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn is_human_readable(&self) -> bool { true }
 }
 
-fn parse_num<T: std::str::FromStr>(bytes: &[u8]) -> Result<T, Error> {
-    core::str::from_utf8(bytes)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .ok_or(Error::Scanner(jzon::Error::InvalidNumber))
+fn invalid_number<T>() -> Result<T, Error> {
+    Err(Error::Scanner(jzon::Error::InvalidNumber))
+}
+
+fn parse_u64(bytes: &[u8]) -> Result<u64, Error> {
+    let mut n = 0u64;
+    for &b in bytes {
+        if !b.is_ascii_digit() {
+            return invalid_number();
+        }
+        let d = (b - b'0') as u64;
+        n = n
+            .checked_mul(10)
+            .and_then(|v| v.checked_add(d))
+            .ok_or(Error::Scanner(jzon::Error::InvalidNumber))?;
+    }
+    Ok(n)
+}
+
+fn parse_u128(bytes: &[u8]) -> Result<u128, Error> {
+    let mut n = 0u128;
+    for &b in bytes {
+        if !b.is_ascii_digit() {
+            return invalid_number();
+        }
+        let d = (b - b'0') as u128;
+        n = n
+            .checked_mul(10)
+            .and_then(|v| v.checked_add(d))
+            .ok_or(Error::Scanner(jzon::Error::InvalidNumber))?;
+    }
+    Ok(n)
+}
+
+fn parse_i64(bytes: &[u8]) -> Result<i64, Error> {
+    let (neg, digits) = match bytes {
+        [b'-', rest @ ..] => (true, rest),
+        _ => (false, bytes),
+    };
+    if digits.is_empty() {
+        return invalid_number();
+    }
+
+    let mut n = 0i64;
+    for &b in digits {
+        if !b.is_ascii_digit() {
+            return invalid_number();
+        }
+        let d = (b - b'0') as i64;
+        n = if neg {
+            n.checked_mul(10).and_then(|v| v.checked_sub(d))
+        } else {
+            n.checked_mul(10).and_then(|v| v.checked_add(d))
+        }
+        .ok_or(Error::Scanner(jzon::Error::InvalidNumber))?;
+    }
+    Ok(n)
+}
+
+fn parse_i128(bytes: &[u8]) -> Result<i128, Error> {
+    let (neg, digits) = match bytes {
+        [b'-', rest @ ..] => (true, rest),
+        _ => (false, bytes),
+    };
+    if digits.is_empty() {
+        return invalid_number();
+    }
+
+    let mut n = 0i128;
+    for &b in digits {
+        if !b.is_ascii_digit() {
+            return invalid_number();
+        }
+        let d = (b - b'0') as i128;
+        n = if neg {
+            n.checked_mul(10).and_then(|v| v.checked_sub(d))
+        } else {
+            n.checked_mul(10).and_then(|v| v.checked_add(d))
+        }
+        .ok_or(Error::Scanner(jzon::Error::InvalidNumber))?;
+    }
+    Ok(n)
 }
 
 fn parse_f64(bytes: &[u8]) -> Result<f64, Error> {
@@ -679,18 +783,12 @@ impl<'de, 'a> Deserializer<'de> {
             let n = parse_f64(bytes)?;
             return visitor.visit_f64(n);
         }
-        let s = core::str::from_utf8(bytes)
-            .map_err(|_| Error::Scanner(jzon::Error::InvalidNumber))?;
         if bytes[0] == b'-' {
-            let n: i64 = s.parse().map_err(|_| Error::Scanner(jzon::Error::InvalidNumber))?;
+            let n = parse_i64(bytes)?;
             visitor.visit_i64(n)
         } else {
-            if let Ok(n) = s.parse::<u64>() {
-                visitor.visit_u64(n)
-            } else {
-                let n: i64 = s.parse().map_err(|_| Error::Scanner(jzon::Error::InvalidNumber))?;
-                visitor.visit_i64(n)
-            }
+            let n = parse_u64(bytes)?;
+            visitor.visit_u64(n)
         }
     }
 }

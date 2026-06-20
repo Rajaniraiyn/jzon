@@ -24,13 +24,13 @@ pub enum RenameAll {
 impl RenameAll {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "lowercase"            => Some(Self::LowerCase),
-            "UPPERCASE"            => Some(Self::UpperCase),
-            "PascalCase"           => Some(Self::PascalCase),
-            "camelCase"            => Some(Self::CamelCase),
-            "snake_case"           => Some(Self::SnakeCase),
+            "lowercase" => Some(Self::LowerCase),
+            "UPPERCASE" => Some(Self::UpperCase),
+            "PascalCase" => Some(Self::PascalCase),
+            "camelCase" => Some(Self::CamelCase),
+            "snake_case" => Some(Self::SnakeCase),
             "SCREAMING_SNAKE_CASE" => Some(Self::ScreamingSnakeCase),
-            "kebab-case"           => Some(Self::KebabCase),
+            "kebab-case" => Some(Self::KebabCase),
             "SCREAMING-KEBAB-CASE" => Some(Self::ScreamingKebabCase),
             _ => None,
         }
@@ -56,6 +56,7 @@ pub struct ContainerAttrs {
     pub rename_all: Option<RenameAll>,
     pub deny_unknown_fields: bool,
     pub default: bool,
+    pub trie_dispatch: bool,
     pub tag: Option<String>,
     pub content: Option<String>,
     pub untagged: bool,
@@ -83,15 +84,21 @@ pub struct FieldAttrs {
 // ── parsing ───────────────────────────────────────────────────────────────────
 
 fn is_serde_or_rjson(attr: &Attribute) -> Option<bool> {
-    if attr.path().is_ident("serde")  { return Some(false); }
-    if attr.path().is_ident("rjson")  { return Some(true);  }
+    if attr.path().is_ident("serde") {
+        return Some(false);
+    }
+    if attr.path().is_ident("rjson") {
+        return Some(true);
+    }
     None
 }
 
 pub fn parse_container_attrs(attrs: &[Attribute]) -> Result<ContainerAttrs> {
     let mut out = ContainerAttrs::default();
     for attr in attrs {
-        let Some(is_rjson) = is_serde_or_rjson(attr) else { continue };
+        let Some(is_rjson) = is_serde_or_rjson(attr) else {
+            continue;
+        };
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("rename_all") {
                 let s: LitStr = meta.value()?.parse()?;
@@ -100,6 +107,8 @@ pub fn parse_container_attrs(attrs: &[Attribute]) -> Result<ContainerAttrs> {
                 out.deny_unknown_fields = true;
             } else if meta.path.is_ident("default") {
                 out.default = true;
+            } else if meta.path.is_ident("trie_dispatch") && is_rjson {
+                out.trie_dispatch = true;
             } else if meta.path.is_ident("tag") {
                 let s: LitStr = meta.value()?.parse()?;
                 out.tag = Some(s.value());
@@ -115,22 +124,41 @@ pub fn parse_container_attrs(attrs: &[Attribute]) -> Result<ContainerAttrs> {
                 // We apply the same rule as rename_all.
                 let s: LitStr = meta.value()?.parse()?;
                 out.rename_all = RenameAll::from_str(&s.value());
-            } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
-                Some("bound" | "crate" | "remote" | "from" | "try_from" | "into"
-                   | "expecting" | "variant_identifier" | "field_identifier")) {
+            } else if matches!(
+                meta.path.get_ident().map(|i| i.to_string()).as_deref(),
+                Some(
+                    "bound"
+                        | "crate"
+                        | "remote"
+                        | "from"
+                        | "try_from"
+                        | "into"
+                        | "expecting"
+                        | "variant_identifier"
+                        | "field_identifier"
+                )
+            ) {
                 // Serde-internal attrs that don't map to jzon codegen. Consume
                 // any value token so syn's parser doesn't choke.
-                if meta.input.peek(syn::Token![=]) { let _: LitStr = meta.value()?.parse()?; }
-            } else if matches!(meta.path.get_ident().map(|i| i.to_string()).as_deref(),
-                Some("serialize_with" | "deserialize_with" | "with")) {
-                if meta.input.peek(syn::Token![=]) { let _: LitStr = meta.value()?.parse()?; }
+                if meta.input.peek(syn::Token![=]) {
+                    let _: LitStr = meta.value()?.parse()?;
+                }
+            } else if matches!(
+                meta.path.get_ident().map(|i| i.to_string()).as_deref(),
+                Some("serialize_with" | "deserialize_with" | "with")
+            ) {
+                if meta.input.peek(syn::Token![=]) {
+                    let _: LitStr = meta.value()?.parse()?;
+                }
             } else if is_rjson {
                 // #[serde(...)] unknowns are silently ignored — serde owns that
                 // namespace and will validate them. #[rjson(...)] unknowns are
                 // a typo or unsupported feature in jzon's own namespace: fail loudly.
                 return Err(meta.error(format!(
                     "unknown rjson container attribute `{}`",
-                    meta.path.get_ident().map_or_else(|| "?".into(), |i| i.to_string())
+                    meta.path
+                        .get_ident()
+                        .map_or_else(|| "?".into(), |i| i.to_string())
                 )));
             }
             Ok(())
@@ -142,7 +170,9 @@ pub fn parse_container_attrs(attrs: &[Attribute]) -> Result<ContainerAttrs> {
 pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
     let mut out = FieldAttrs::default();
     for attr in attrs {
-        let Some(is_rjson) = is_serde_or_rjson(attr) else { continue };
+        let Some(is_rjson) = is_serde_or_rjson(attr) else {
+            continue;
+        };
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("rename") {
                 let s: LitStr = meta.value()?.parse()?;

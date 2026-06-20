@@ -7,6 +7,7 @@ Last updated: 2026-06-16 · Ref: `main` · [Run log](https://github.com/Rajanira
 
 Criterion median throughput. GiB/s where >= 1, MiB/s otherwise. Higher is better.
 High-water mark: values only increase across runs.
+Current-run tables show the latest workflow run before high-water merging.
 
 ## Headline (jzon)
 
@@ -21,6 +22,17 @@ High-water mark: values only increase across runs.
 | **Best across platforms** | 1.35 GiB/s | 55.92 GiB/s | 2.66 GiB/s |  916 MiB/s |
 
 <!-- bench:headline-end -->
+
+## Current Run (jzon)
+
+Latest workflow run only; values here are not merged with stored high-water results. The next generated benchmark update will populate this table from workflow logs.
+
+<!-- bench:current-run-start -->
+| Platform | twitter de | twitter ser | citm de | canada ser |
+|---|--:|--:|--:|--:|
+| — | — | — | — | — |
+
+<!-- bench:current-run-end -->
 
 ## Head-to-head vs serde_json / sonic-rs / simd-json
 
@@ -63,3 +75,73 @@ gh workflow run bench.yml --ref main \
   -f bench=bench_cmp \
   -f measurement_time=6
 ```
+
+For focused local scaffolding checks, use Criterion filters and short measurement windows:
+
+```bash
+cargo bench -p jzon-rs --bench bench_scanner --features "simd,fast-float" -- scanner/read_str --measurement-time 1 --warm-up-time 1
+cargo bench -p jzon-rs --bench bench_derive_dispatch --features "simd,fast-float" -- derive_dispatch/strategies --measurement-time 1 --warm-up-time 1
+```
+
+## Compile-time and code-size checks (optional)
+
+These recipes help inspect derive macro expansion and generated code size. They are
+local-only; CI does not require them.
+
+### Expand generated dispatch (requires nightly or `cargo-expand`)
+
+Install once:
+
+```bash
+cargo install cargo-expand
+```
+
+Expand the integration test crate and inspect generated dispatch strategy
+(integer compare vs PHF vs trie):
+
+```bash
+cargo expand -p jzon-rs --features "simd,fast-float" --test integration > /tmp/jzon-integration-expanded.rs
+rg 'HASH_TABLE|SLOT_KEYS|from_le_bytes|_key\s*\[' /tmp/jzon-integration-expanded.rs
+```
+
+Or expand the derive-dispatch benchmark target:
+
+```bash
+cargo expand -p jzon-rs --features "simd,fast-float" --bench bench_derive_dispatch > /tmp/jzon-bench-dispatch-expanded.rs
+rg 'PhfRecord|TrieRecord|HASH_TABLE|SLOT_KEYS|from_le_bytes|_key\s*\[' /tmp/jzon-bench-dispatch-expanded.rs
+```
+
+Look for:
+- `from_le_bytes` — integer-padded key compare (default for ≤6 active fields)
+- `HASH_TABLE` / `SLOT_KEYS` — compile-time PHF (default for >6 active fields)
+- `_key[...]` byte indexing — trie dispatch (`#[rjson(trie_dispatch)]`)
+
+### LLVM line counts (requires `cargo-llvm-lines`)
+
+Install once:
+
+```bash
+cargo install cargo-llvm-lines
+```
+
+Compare LLVM IR size for a bench target before/after derive changes:
+
+```bash
+cargo llvm-lines -p jzon-rs --features "simd,fast-float" --bench bench_derive_dispatch --release
+```
+
+Filter to dispatch-heavy symbols:
+
+```bash
+cargo llvm-lines -p jzon-rs --features "simd,fast-float" --bench bench_derive_dispatch --release 2>/dev/null | rg 'PhfRecord|TrieRecord|from_json_scanner'
+```
+
+### Proc-macro timing (nightly only)
+
+On a nightly toolchain, `-Z timings` reports per-crate compile time including proc-macros:
+
+```bash
+cargo +nightly check -p jzon-rs -Z timings
+```
+
+Open the generated `cargo-timing.html` in the repo root and inspect `jzon_derive` compile cost after codegen changes.
