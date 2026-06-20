@@ -11,7 +11,10 @@ use crate::{Error, Scanner};
 const ASCII_TO_DIGIT: [u8; 256] = {
     let mut t = [0xFFu8; 256];
     let mut i = b'0';
-    while i <= b'9' { t[i as usize] = i - b'0'; i += 1; }
+    while i <= b'9' {
+        t[i as usize] = i - b'0';
+        i += 1;
+    }
     t
 };
 
@@ -63,7 +66,12 @@ impl<'de> FromJson<'de> for bool {
 impl<'de, T: FromJson<'de>> FromJson<'de> for Option<T> {
     fn from_json_scanner(sc: &mut Scanner<'de>) -> Result<Self, Error> {
         sc.skip_whitespace();
-        if sc.peek_null() { sc.read_null()?; Ok(None) } else { T::from_json_scanner(sc).map(Some) }
+        if sc.peek_null() {
+            sc.read_null()?;
+            Ok(None)
+        } else {
+            T::from_json_scanner(sc).map(Some)
+        }
     }
 }
 
@@ -75,7 +83,10 @@ impl<'de, T: FromJson<'de>> FromJson<'de> for Vec<T> {
         sc.skip_whitespace();
         sc.expect_byte(b'[')?;
         // Fuse whitespace skip + empty-array check in one call.
-        if sc.peek_byte_after_ws()? == b']' { sc.advance(); return Ok(Vec::new()); }
+        if sc.peek_byte_after_ws()? == b']' {
+            sc.advance();
+            return Ok(Vec::new());
+        }
         // Pre-allocate with a small guess to avoid the first few reallocs in
         // the common case (canada-style coordinate arrays, object field lists).
         let mut out: Vec<T> = Vec::with_capacity(16);
@@ -84,9 +95,14 @@ impl<'de, T: FromJson<'de>> FromJson<'de> for Vec<T> {
             // Fuse: skip any trailing whitespace then examine the separator —
             // a single call instead of skip_whitespace() + peek_byte().
             match sc.peek_byte_after_ws()? {
-                b',' => { sc.advance(); }
-                b']' => { sc.advance(); break; }
-                _    => return Err(Error::UnexpectedToken),
+                b',' => {
+                    sc.advance();
+                }
+                b']' => {
+                    sc.advance();
+                    break;
+                }
+                _ => return Err(Error::UnexpectedToken),
             }
         }
         // NOTE: shrink_to_fit() was removed here. It caused a catastrophic
@@ -113,7 +129,9 @@ impl<'de> FromJson<'de> for u64 {
         let mut overflow = false;
         for &b in bytes {
             let d = DIGIT[b as usize];
-            if d == 255 { return Err(Error::InvalidNumber); }
+            if d == 255 {
+                return Err(Error::InvalidNumber);
+            }
             // Use overflowing_* to detect u64 overflow without a branch per byte.
             let (next, ovf) = n.overflowing_mul(10);
             overflow |= ovf;
@@ -121,7 +139,9 @@ impl<'de> FromJson<'de> for u64 {
             overflow |= ovf2;
             n = next2;
         }
-        if overflow { return Err(Error::InvalidNumber); }
+        if overflow {
+            return Err(Error::InvalidNumber);
+        }
         Ok(n)
     }
 }
@@ -258,10 +278,13 @@ impl<'de> FromJson<'de> for u128 {
         let mut n = 0u128;
         for &b in bytes {
             let d = DIGIT[b as usize];
-            if d == 0xFF { return Err(Error::InvalidNumber); }
-            n = n.checked_mul(10)
-                 .and_then(|v| v.checked_add(d as u128))
-                 .ok_or(Error::InvalidNumber)?;
+            if d == 0xFF {
+                return Err(Error::InvalidNumber);
+            }
+            n = n
+                .checked_mul(10)
+                .and_then(|v| v.checked_add(d as u128))
+                .ok_or(Error::InvalidNumber)?;
         }
         Ok(n)
     }
@@ -272,14 +295,27 @@ impl<'de> FromJson<'de> for i128 {
     fn from_json_scanner(sc: &mut Scanner<'de>) -> Result<Self, Error> {
         sc.skip_whitespace();
         let bytes = sc.read_number_bytes()?;
-        let (neg, digits) = if bytes.first() == Some(&b'-') { (true, &bytes[1..]) } else { (false, bytes) };
+        let (neg, digits) = if bytes.first() == Some(&b'-') {
+            (true, &bytes[1..])
+        } else {
+            (false, bytes)
+        };
         let mut n = 0i128;
         for &b in digits {
             let d = DIGIT[b as usize];
-            if d == 0xFF { return Err(Error::InvalidNumber); }
-            n = n.checked_mul(10)
-                 .and_then(|v| if neg { v.checked_sub(d as i128) } else { v.checked_add(d as i128) })
-                 .ok_or(Error::InvalidNumber)?;
+            if d == 0xFF {
+                return Err(Error::InvalidNumber);
+            }
+            n = n
+                .checked_mul(10)
+                .and_then(|v| {
+                    if neg {
+                        v.checked_sub(d as i128)
+                    } else {
+                        v.checked_add(d as i128)
+                    }
+                })
+                .ok_or(Error::InvalidNumber)?;
         }
         Ok(n)
     }
@@ -306,7 +342,10 @@ impl<'de> FromJson<'de> for () {
     fn from_json_scanner(sc: &mut Scanner<'de>) -> Result<Self, Error> {
         sc.skip_whitespace();
         match sc.peek_byte()? {
-            b'n' => { sc.read_null()?; Ok(()) }
+            b'n' => {
+                sc.read_null()?;
+                Ok(())
+            }
             b'{' => {
                 sc.advance();
                 sc.skip_whitespace();
@@ -331,19 +370,20 @@ impl<'de, V: FromJson<'de>> FromJson<'de> for HashMap<String, V> {
         let mut map = HashMap::with_capacity(8);
         loop {
             match sc.peek_byte_after_ws()? {
-                b'}' => { sc.advance(); break; }
+                b'}' => {
+                    sc.advance();
+                    break;
+                }
                 b'"' => {
-                    // read_key_colon: zero-copy raw bytes, no intermediate JsonStr allocation.
+                    // read_str_key_colon: zero-copy borrowed key, no intermediate JsonStr allocation.
                     // Returns EscapedKey error if backslash present (uncommon in map keys).
-                    let key_bytes = sc.read_key_colon()?;
-                    // JSON keys are guaranteed valid UTF-8; from_utf8 is infallible here.
-                    let key = core::str::from_utf8(key_bytes)
-                        .map_err(|_| Error::InvalidUtf8)?
-                        .to_owned();
+                    let key = sc.read_str_key_colon()?.to_owned();
                     let val = V::from_json_scanner(sc)?;
                     map.insert(key, val);
                     match sc.peek_byte_after_ws()? {
-                        b',' => { sc.advance(); }
+                        b',' => {
+                            sc.advance();
+                        }
                         b'}' => {}
                         _ => return Err(Error::UnexpectedToken),
                     }
@@ -362,7 +402,10 @@ impl<'de, V: FromJson<'de>> FromJson<'de> for HashMap<&'de str, V> {
         let mut map = HashMap::new();
         loop {
             match sc.peek_byte_after_ws()? {
-                b'}' => { sc.advance(); break; }
+                b'}' => {
+                    sc.advance();
+                    break;
+                }
                 b'"' => {
                     let key = sc.read_str()?;
                     let key_str = key.as_borrowed().ok_or(Error::EscapedString)?;
@@ -371,7 +414,9 @@ impl<'de, V: FromJson<'de>> FromJson<'de> for HashMap<&'de str, V> {
                     let val = V::from_json_scanner(sc)?;
                     map.insert(key_str, val);
                     match sc.peek_byte_after_ws()? {
-                        b',' => { sc.advance(); }
+                        b',' => {
+                            sc.advance();
+                        }
                         b'}' => {}
                         _ => return Err(Error::UnexpectedToken),
                     }
@@ -395,17 +440,19 @@ impl<'de, V: FromJson<'de>> FromJson<'de> for BTreeMap<String, V> {
         let mut map = BTreeMap::new();
         loop {
             match sc.peek_byte_after_ws()? {
-                b'}' => { sc.advance(); break; }
+                b'}' => {
+                    sc.advance();
+                    break;
+                }
                 b'"' => {
-                    // read_key_colon: zero-copy raw bytes — same optimization as HashMap.
-                    let key_bytes = sc.read_key_colon()?;
-                    let key = core::str::from_utf8(key_bytes)
-                        .map_err(|_| Error::InvalidUtf8)?
-                        .to_owned();
+                    // read_str_key_colon: zero-copy borrowed key — same optimization as HashMap.
+                    let key = sc.read_str_key_colon()?.to_owned();
                     let val = V::from_json_scanner(sc)?;
                     map.insert(key, val);
                     match sc.peek_byte_after_ws()? {
-                        b',' => { sc.advance(); }
+                        b',' => {
+                            sc.advance();
+                        }
                         b'}' => {}
                         _ => return Err(Error::UnexpectedToken),
                     }

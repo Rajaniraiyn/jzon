@@ -242,6 +242,14 @@ impl<'de> Scanner<'de> {
         Ok(key)
     }
 
+    /// Read a JSON object key and the mandatory `:` separator, returning a
+    /// validated UTF-8 key borrow.
+    #[inline]
+    pub(crate) fn read_str_key_colon(&mut self) -> Result<&'de str, Error> {
+        let key = self.read_key_colon()?;
+        core::str::from_utf8(key).map_err(|_| Error::InvalidUtf8)
+    }
+
     /// Read a JSON string value.
     ///
     /// Returns [`JsonStr::BorrowedNoEsc`] when no escape sequences are present
@@ -288,16 +296,12 @@ impl<'de> Scanner<'de> {
         }
     }
 
-    /// Scan a JSON number and return the raw byte slice (zero-copy).
-    pub fn read_number_bytes(&mut self) -> Result<&'de [u8], Error> {
-        self.skip_whitespace();
+    #[inline]
+    fn scan_ascii_digits(&mut self) -> usize {
         let start = self.pos;
-        if self.input.get(self.pos) == Some(&b'-') {
-            self.pos += 1;
-        }
 
         // SWAR digit scan: for byte b, b is b'0'..=b'9' iff (b - 0x30) is 0..=9.
-        // Two conditions: (1) sub has no high bits (rules out bytes ≥ 0xB0),
+        // Two conditions: (1) sub has no high bits (rules out bytes >= 0xB0),
         // (2) sub + 0x76 has no high bits (rules out sub bytes 10..=0x7F).
         #[inline(always)]
         fn swar_all_digits(chunk: u64) -> bool {
@@ -307,6 +311,33 @@ impl<'de> Scanner<'de> {
             }
             let check = sub.wrapping_add(0x7676_7676_7676_7676_u64);
             (check & 0x8080_8080_8080_8080_u64) == 0
+        }
+
+        while self.pos + 8 <= self.input.len() {
+            let chunk = u64::from_le_bytes(self.input[self.pos..self.pos + 8].try_into().unwrap());
+            if swar_all_digits(chunk) {
+                self.pos += 8;
+            } else {
+                break;
+            }
+        }
+        while let Some(&b) = self.input.get(self.pos) {
+            if b.is_ascii_digit() {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+
+        self.pos - start
+    }
+
+    /// Scan a JSON number and return the raw byte slice (zero-copy).
+    pub fn read_number_bytes(&mut self) -> Result<&'de [u8], Error> {
+        self.skip_whitespace();
+        let start = self.pos;
+        if self.input.get(self.pos) == Some(&b'-') {
+            self.pos += 1;
         }
 
         // Read the integer part.  If it starts with '0', the spec forbids any
@@ -321,23 +352,7 @@ impl<'de> Scanner<'de> {
             }
             Some(&(b'1'..=b'9')) => {
                 self.pos += 1;
-                // Scan remaining integer digits with SWAR then byte-by-byte.
-                while self.pos + 8 <= self.input.len() {
-                    let chunk =
-                        u64::from_le_bytes(self.input[self.pos..self.pos + 8].try_into().unwrap());
-                    if swar_all_digits(chunk) {
-                        self.pos += 8;
-                    } else {
-                        break;
-                    }
-                }
-                while let Some(&b) = self.input.get(self.pos) {
-                    if b.is_ascii_digit() {
-                        self.pos += 1;
-                    } else {
-                        break;
-                    }
-                }
+                self.scan_ascii_digits();
             }
             _ => {} // will be caught by the end-check below
         }
@@ -345,24 +360,7 @@ impl<'de> Scanner<'de> {
         if self.input.get(self.pos) == Some(&b'.') {
             self.pos += 1;
             // At least one digit must follow the decimal point.
-            let digits_start = self.pos;
-            while self.pos + 8 <= self.input.len() {
-                let chunk =
-                    u64::from_le_bytes(self.input[self.pos..self.pos + 8].try_into().unwrap());
-                if swar_all_digits(chunk) {
-                    self.pos += 8;
-                } else {
-                    break;
-                }
-            }
-            while let Some(&b) = self.input.get(self.pos) {
-                if b.is_ascii_digit() {
-                    self.pos += 1;
-                } else {
-                    break;
-                }
-            }
-            if self.pos == digits_start {
+            if self.scan_ascii_digits() == 0 {
                 // No digit after '.': "1." is invalid JSON.
                 return Err(Error::InvalidNumber);
             }
@@ -372,12 +370,8 @@ impl<'de> Scanner<'de> {
             if matches!(self.input.get(self.pos), Some(b'+') | Some(b'-')) {
                 self.pos += 1;
             }
-            while let Some(&b) = self.input.get(self.pos) {
-                if b.is_ascii_digit() {
-                    self.pos += 1;
-                } else {
-                    break;
-                }
+            if self.scan_ascii_digits() == 0 {
+                return Err(Error::InvalidNumber);
             }
         }
         let end = self.pos;
