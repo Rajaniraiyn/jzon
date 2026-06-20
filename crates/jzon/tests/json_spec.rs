@@ -153,7 +153,11 @@ fn ws_unicode_category_z_is_invalid() {
     // tc39: invalid-whitespace.js — U+1680, U+2000–U+200A, U+202F etc. not whitespace
     for ch in ['\u{1680}', '\u{2000}', '\u{2001}', '\u{2028}', '\u{3000}'] {
         let s = format!("{ch}1");
-        assert!(parse(&s).is_err(), "U+{:04X} should not be whitespace", ch as u32);
+        assert!(
+            parse(&s).is_err(),
+            "U+{:04X} should not be whitespace",
+            ch as u32
+        );
     }
 }
 
@@ -641,7 +645,11 @@ fn obj_control_char_in_key_rejected() {
     // tc39: 15.12.2-2-1 — literal U+0000..U+001F in key string body → error
     for cp in ['\u{0000}', '\u{0001}', '\u{0009}', '\u{001F}'] {
         let s = format!("{{\"{cp}key\": 1}}");
-        assert!(parse(&s).is_err(), "U+{:04X} in key should be rejected", cp as u32);
+        assert!(
+            parse(&s).is_err(),
+            "U+{:04X} in key should be rejected",
+            cp as u32
+        );
     }
 }
 
@@ -651,7 +659,11 @@ fn obj_control_char_in_string_value_rejected() {
     // tc39: 15.12.2-2-6..10
     for cp in ['\u{0000}', '\u{0001}', '\u{0009}', '\u{001F}'] {
         let s = format!("{{\"name\": \"{cp}\"}}");
-        assert!(parse(&s).is_err(), "U+{:04X} in value string should be rejected", cp as u32);
+        assert!(
+            parse(&s).is_err(),
+            "U+{:04X} in value string should be rejected",
+            cp as u32
+        );
     }
 }
 
@@ -756,8 +768,10 @@ fn ser_negative_zero_actual_behavior() {
     // Document what jzon currently produces for -0.0.
     let s = to_string(&(-0.0f64)).unwrap();
     // jzon currently emits "-0"; record this as the observed output.
-    assert!(s == "-0" || s == "0" || s == "0.0",
-        "unexpected negative-zero output: {s}");
+    assert!(
+        s == "-0" || s == "0" || s == "0.0",
+        "unexpected negative-zero output: {s}"
+    );
 }
 
 // spec: stringify/non-finite-as-null
@@ -801,8 +815,8 @@ fn ser_ascii_control_chars_escaped() {
     check('\u{000A}', r"\n");
     check('\u{000C}', r"\f");
     check('\u{000D}', r"\r");
-    check('"',        r#"\""#);
-    check('\\',       r"\\");
+    check('"', r#"\""#);
+    check('\\', r"\\");
     // U+0000 and U+001F use \uXXXX form
     check('\u{0000}', "\\u");
     check('\u{001F}', "\\u");
