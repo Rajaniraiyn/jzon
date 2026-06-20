@@ -411,6 +411,18 @@ fn num_negative_exponent_sign_requires_digit() {
     assert!(parse("1e-").is_err());
 }
 
+// spec: numbers/exponent-requires-digit
+#[test]
+fn num_uppercase_positive_exponent_sign_requires_digit() {
+    assert!(parse("1E+").is_err());
+}
+
+// spec: numbers/exponent-requires-digit
+#[test]
+fn num_uppercase_negative_exponent_sign_requires_digit() {
+    assert!(parse("1E-").is_err());
+}
+
 // spec: numbers/large
 #[test]
 fn num_large_integer() {
