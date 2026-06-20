@@ -10,7 +10,7 @@ SIMD-backed serde `Serializer`/`Deserializer` for any type deriving `serde::Seri
 
 ```toml
 [dependencies]
-jzon-rs-serde = "0.2"
+jzon-rs-serde = "0.3"
 serde = { version = "1", features = ["derive"] }
 ```
 

@@ -17,7 +17,7 @@ Add `jzon-rs`. The `derive` feature is on by default.
 
 ```toml
 [dependencies]
-jzon-rs = "0.2"
+jzon-rs = "0.3"
 ```
 
 ```rust
@@ -41,7 +41,7 @@ Add `jzon-rs-serde`. No other changes to your code.
 
 ```toml
 [dependencies]
-jzon-rs-serde = "0.2"
+jzon-rs-serde = "0.3"
 serde = { version = "1", features = ["derive"] }
 ```
 
@@ -63,7 +63,7 @@ through jzon automatically.
 
 ```toml
 [patch.crates-io]
-serde_json = { package = "jzon-rs-compat", version = "0.2" }
+serde_json = { package = "jzon-rs-compat", version = "0.3" }
 ```
 
 ## Features

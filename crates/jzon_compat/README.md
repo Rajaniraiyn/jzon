@@ -12,7 +12,7 @@ Add one line to your workspace `Cargo.toml` — no code changes required:
 
 ```toml
 [patch.crates-io]
-serde_json = { package = "jzon-rs-compat", version = "0.2" }
+serde_json = { package = "jzon-rs-compat", version = "0.3" }
 ```
 
 That's it. Cargo replaces every transitive `serde_json` dependency with this crate.
@@ -26,7 +26,7 @@ That's it. Cargo replaces every transitive `serde_json` dependency with this cra
 | `unstable` | off | `std::simd` portable SIMD 32–64 bytes/iter (nightly only) |
 | `stats` | off | Allocation counters on the underlying Scanner |
 
-To disable the fast-float default: `jzon-rs-compat = { version = "0.1", default-features = false }`.
+To disable the fast-float default: `jzon-rs-compat = { version = "0.3", default-features = false }`.
 
 ## What it does
 

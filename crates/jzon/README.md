@@ -11,7 +11,7 @@ Zero-copy JSON for Rust with compile-time generated parsers.
 
 ```toml
 [dependencies]
-jzon-rs = "0.2"
+jzon-rs = "0.3"
 ```
 
 ```rust
@@ -51,7 +51,7 @@ fn main() {
 
 ```toml
 [dependencies]
-jzon-rs = { version = "0.1", features = ["serde"] }
+jzon-rs = { version = "0.3", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 ```
 
@@ -69,7 +69,7 @@ let out = jzon::to_string(&user).unwrap();
 
 ```toml
 [dependencies]
-jzon-rs = { version = "0.1", features = ["compat"] }
+jzon-rs = { version = "0.3", features = ["compat"] }
 ```
 
 ```rust
